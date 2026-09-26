@@ -1,0 +1,243 @@
+name: srm-credit-engine
+
+services:
+  postgres:
+    image: postgres:17.11-trixie
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-srm_credit}
+      POSTGRES_USER: ${POSTGRES_ADMIN_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_ADMIN_PASSWORD:?Copie .env.example para .env e defina a senha administrativa local}
+      TZ: UTC
+      ENGINE_DB_USER: ${ENGINE_DB_USER:?Defina ENGINE_DB_USER no .env}
+      ENGINE_DB_PASSWORD: ${ENGINE_DB_PASSWORD:?Defina ENGINE_DB_PASSWORD no .env}
+      WORKFLOW_DB_USER: ${WORKFLOW_DB_USER:?Defina WORKFLOW_DB_USER no .env}
+      WORKFLOW_DB_PASSWORD: ${WORKFLOW_DB_PASSWORD:?Defina WORKFLOW_DB_PASSWORD no .env}
+      MIGRATION_DB_USER: ${MIGRATION_DB_USER:?Defina MIGRATION_DB_USER no .env}
+      MIGRATION_DB_PASSWORD: ${MIGRATION_DB_PASSWORD:?Defina MIGRATION_DB_PASSWORD no .env}
+      KEYCLOAK_DB_NAME: ${KEYCLOAK_DB_NAME:-keycloak}
+      KEYCLOAK_DB_USER: ${KEYCLOAK_DB_USER:?Defina KEYCLOAK_DB_USER no .env}
+      KEYCLOAK_DB_PASSWORD: ${KEYCLOAK_DB_PASSWORD:?Defina KEYCLOAK_DB_PASSWORD no .env}
+    command: ["postgres", "-c", "timezone=UTC"]
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./infra/postgres/init/10-create-roles.sh:/docker-entrypoint-initdb.d/10-create-roles.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 10s
+    restart: unless-stopped
+
+  kafka-data-init:
+    image: apache/kafka:4.2.1
+    user: "0:0"
+    entrypoint: ["/bin/sh", "-c"]
+    command: ["chown 1000:1000 /data"]
+    volumes:
+      - kafka_data:/data
+    restart: "no"
+
+  kafka:
+    image: apache/kafka:4.2.1
+    hostname: kafka
+    depends_on:
+      kafka-data-init:
+        condition: service_completed_successfully
+    environment:
+      CLUSTER_ID: ${KAFKA_CLUSTER_ID:-4L6g3nShT-eMCtK--X86sw}
+      KAFKA_NODE_ID: "1"
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,INTERNAL:PLAINTEXT
+      KAFKA_LISTENERS: CONTROLLER://:29093,INTERNAL://:9092
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka:9092
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:29093
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+      KAFKA_NUM_PARTITIONS: "3"
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: "1"
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: "1"
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: "1"
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: "0"
+    volumes:
+      - kafka_data:/var/lib/kafka/data
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server kafka:9092 >/dev/null 2>&1"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
+    restart: unless-stopped
+
+  kafka-init:
+    image: apache/kafka:4.2.1
+    depends_on:
+      kafka:
+        condition: service_healthy
+    entrypoint: ["/bin/sh", "/opt/srm/init/create-topics.sh"]
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: ${KAFKA_BOOTSTRAP_SERVERS:-kafka:9092}
+    volumes:
+      - ./infra/kafka/create-topics.sh:/opt/srm/init/create-topics.sh:ro
+    restart: "no"
+
+  keycloak:
+    image: srm-credit-keycloak:26.7.4
+    build:
+      context: ./infra/keycloak
+      dockerfile: Dockerfile
+    command: ["start", "--import-realm"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_ADMIN_USER:?Defina KEYCLOAK_ADMIN_USER no .env}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:?Defina KEYCLOAK_ADMIN_PASSWORD no .env}
+      KC_DB: postgres
+      KC_DB_URL_HOST: postgres
+      KC_DB_URL_PORT: "5432"
+      KC_DB_URL_DATABASE: ${KEYCLOAK_DB_NAME:-keycloak}
+      KC_DB_SCHEMA: public
+      KC_DB_USERNAME: ${KEYCLOAK_DB_USER:?Defina KEYCLOAK_DB_USER no .env}
+      KC_DB_PASSWORD: ${KEYCLOAK_DB_PASSWORD:?Defina KEYCLOAK_DB_PASSWORD no .env}
+      KC_HEALTH_ENABLED: "true"
+      KC_METRICS_ENABLED: "true"
+      KC_HTTP_ENABLED: "true"
+      KC_HTTP_RELATIVE_PATH: /auth
+      KC_HTTP_MANAGEMENT_PORT: "9000"
+      KC_HTTP_MANAGEMENT_SCHEME: http
+      KC_HOSTNAME: ${KEYCLOAK_HOSTNAME:-https://localhost:8443/auth}
+      KC_HOSTNAME_STRICT: "true"
+      KC_PROXY_HEADERS: xforwarded
+      KEYCLOAK_FRONTEND_URL: ${KEYCLOAK_FRONTEND_URL:-https://localhost:8443}
+      KEYCLOAK_OPERATOR_PASSWORD: ${KEYCLOAK_OPERATOR_PASSWORD:?Defina KEYCLOAK_OPERATOR_PASSWORD no .env}
+      KEYCLOAK_MANAGER_PASSWORD: ${KEYCLOAK_MANAGER_PASSWORD:?Defina KEYCLOAK_MANAGER_PASSWORD no .env}
+    volumes:
+      - ./infra/keycloak/realm/srm-credit-realm.json:/opt/keycloak/data/import/srm-credit-realm.json:ro
+    expose:
+      - "9000"
+    mem_limit: 1g
+    healthcheck:
+      test:
+        - CMD
+        - /bin/bash
+        - -ec
+        - "{ printf 'GET /auth/health/ready HTTP/1.0\\r\\nHost: localhost\\r\\n\\r\\n' >&0; grep 'HTTP/1.0 200'; } 0<>/dev/tcp/localhost/9000"
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 60s
+    restart: unless-stopped
+
+  spe-j-engine:
+    image: srm-credit-engine:0.0.1
+    build:
+      context: ./spe-j-engine
+      dockerfile: Dockerfile
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      SERVER_PORT: "8080"
+      MANAGEMENT_SERVER_PORT: "8081"
+      SWAGGER_ENABLED: "true"
+    expose:
+      - "8080"
+      - "8081"
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - "bash -ec 'exec 3<>/dev/tcp/127.0.0.1/8081; printf \"GET /actuator/health/readiness HTTP/1.0\\r\\nHost: localhost\\r\\n\\r\\n\" >&3; grep -q \"HTTP/1.1 200\" <&3'"
+      interval: 10s
+      timeout: 3s
+      retries: 12
+      start_period: 30s
+    restart: unless-stopped
+
+  spe-j-workflow:
+    image: srm-credit-workflow:0.0.1
+    build:
+      context: ./spe-j-workflow
+      dockerfile: Dockerfile
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
+    environment:
+      SERVER_PORT: "18081"
+      MANAGEMENT_SERVER_PORT: "18082"
+      SWAGGER_ENABLED: "true"
+      KAFKA_BOOTSTRAP_SERVERS: ${KAFKA_BOOTSTRAP_SERVERS:-kafka:9092}
+      KAFKA_CONSUMER_GROUP: ${KAFKA_CONSUMER_GROUP:-srm-credit-settlement}
+      SPRING_KAFKA_LISTENER_AUTO_STARTUP: "false"
+    expose:
+      - "18081"
+      - "18082"
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - "bash -ec 'exec 3<>/dev/tcp/127.0.0.1/18082; printf \"GET /actuator/health/readiness HTTP/1.0\\r\\nHost: localhost\\r\\n\\r\\n\" >&3; grep -q \"HTTP/1.1 200\" <&3'"
+      interval: 10s
+      timeout: 3s
+      retries: 12
+      start_period: 30s
+    restart: unless-stopped
+
+  smoke-upstream:
+    profiles:
+      - smoke-test
+    image: srm-credit-smoke-upstream:0.0.1
+    build:
+      context: ./infra/nginx/smoke-upstream
+      dockerfile: Dockerfile
+    expose:
+      - "8080"
+    networks:
+      default:
+        aliases:
+          - spe-j-engine
+    restart: "no"
+
+  local-certificate:
+    image: srm-credit-local-certificate:3.24.2
+    build:
+      context: ./infra/nginx/cert-init
+      dockerfile: Dockerfile
+    volumes:
+      - nginx_certificates:/certs
+    restart: "no"
+
+  nginx:
+    image: srm-credit-ui:0.0.1
+    build:
+      context: ./ui-r-credit
+      dockerfile: Dockerfile
+    depends_on:
+      local-certificate:
+        condition: service_completed_successfully
+      keycloak:
+        condition: service_healthy
+      spe-j-engine:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:8088:80"
+      - "127.0.0.1:8443:443"
+    volumes:
+      - nginx_certificates:/etc/nginx/certs:ro
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://127.0.0.1/healthz"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  kafka_data:
+  nginx_certificates:
