@@ -1,0 +1,27 @@
+spring:
+  application:
+    name: spe-j-workflow
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    consumer:
+      group-id: ${KAFKA_CONSUMER_GROUP:srm-credit-settlement}
+      enable-auto-commit: false
+    listener:
+      ack-mode: manual_immediate
+      auto-startup: false
+
+server:
+  port: ${SERVER_PORT:18081}
+
+springdoc:
+  packages-to-scan: com.backend
+  api-docs:
+    enabled: ${SWAGGER_ENABLED:true}
+    path: /v3/api-docs
+  swagger-ui:
+    enabled: ${SWAGGER_ENABLED:true}
+    path: /swagger-ui.html
+    disable-swagger-default-url: true
+    operations-sorter: alpha
+    tags-sorter: alpha
+    persist-authorization: false
