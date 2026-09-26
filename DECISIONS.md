@@ -1,8 +1,8 @@
 # DECISIONS — SRM Credit Engine
 
-**25/09/2026 · Escopo Sênior · Decisões aprovadas para implementação.**
+**Decisões aprovadas em 25/09/2026 · Estado atualizado em 26/09/2026 · Escopo Sênior.**
 
-Este documento registra escolhas, alternativas e custos. Os contratos funcionais e operacionais permanecem em [SPEC.md](SPEC.md); as convenções de implementação estão em [AGENTS.md](AGENTS.md). Somente a estrutura de inicialização e documentação dos backends foi criada; as funcionalidades ainda não foram implementadas; as expectativas de carga abaixo precisam ser verificadas por medição.
+Este documento registra escolhas, alternativas e custos. Os contratos funcionais e operacionais permanecem em [SPEC.md](SPEC.md); as convenções de implementação estão em [AGENTS.md](AGENTS.md). A infraestrutura local com Docker Compose, Nginx e Keycloak está configurada. As funcionalidades de negócio ainda não foram implementadas; as expectativas de carga abaixo precisam ser verificadas por medição.
 
 ## 1. Separar o processamento de liquidações da API
 
@@ -57,12 +57,24 @@ Removida a obrigação de disponibilizar `builder(...)` em toda classe instancia
 
 Removida a proibição de injeção por construtor. Injeção por construtor e por campos são permitidas; a injeção em campos mantém as anotações explícitas definidas no AGENTS.md. Essas flexibilizações evitam impor mecanismos sem benefício concreto.
 
-## 4. Evidências pendentes
+## 4. Evidências e validações pendentes
 
-Após implementar, associar estas decisões aos testes, medições, diagramas ER/C4 e PRs correspondentes. Permanecem pendentes a demonstração de concorrência e recuperação, a medição da carga efetiva do worker e a validação do ambiente reproduzível. As verificações da estrutura inicial estão registradas em AI_USAGE.md e não demonstram as garantias funcionais previstas.
+O teste de infraestrutura `scripts/infra-smoke-test.py` validou a inicialização reproduzível, o gateway HTTPS, a autenticação OIDC do realm de demonstração, os limites e erros HTTP, a persistência dos volumes e a ausência de credenciais nos logs. Os testes de backend cobrem readiness do Actuator e bloqueio do endpoint de ambiente; não comprovam regras financeiras.
 
-## 5. Estrutura inicial executável
+Continuam pendentes testes de golden cases financeiros, concorrência e recuperação da liquidação, rollback atômico, aprovação cambial, medições de carga do worker e diagramas ER/C4. As evidências devem ser associadas às decisões quando essas funcionalidades forem implementadas. A validação do Compose é local e não demonstra disponibilidade ou segurança de produção.
 
-O projeto de processamento utiliza o nome `spe-j-workflow`, conforme a solicitação de criação da estrutura. Seu papel de worker permanece inalterado. Nesta etapa, os únicos arquivos Java são as classes de inicialização Spring Boot; as pastas dos domínios permanecem vazias.
+## 5. Estado funcional atual
 
-Ambos os projetos disponibilizam Swagger sem operações para permitir sua execução e inspeção local. O HTTP do workflow serve apenas à documentação, sem Resources de negócio. Banco, autenticação e consumers serão implementados nas etapas seguintes; o consumo Kafka permanece desativado. Não foram introduzidos patterns ou abstrações de negócio nesta estrutura.
+O Compose inicia Nginx, Keycloak, PostgreSQL, Kafka, engine, workflow e frontend. Engine e workflow expõem Swagger sem operações de negócio e health checks do Actuator. O HTTP do workflow serve apenas à documentação; seu consumer Kafka permanece desativado. O engine ainda não valida tokens nem usa o banco, o frontend ainda não implementa login OIDC e não há cadastro, simulação ou liquidação implementados.
+
+## 6. Infraestrutura do ambiente local
+
+- **Nginx como única entrada publicada:** as portas `8088` e `8443` ficam vinculadas a `127.0.0.1`; os serviços internos não publicam portas no host. TLS termina no Nginx, que encaminha HTTP dentro da rede privada do Compose. Isso simplifica o acesso local e centraliza limites, cache e logs, mas cria um único ponto de entrada e não define a arquitetura TLS de produção.
+- **Certificado autoassinado:** um serviço inicializador cria o certificado local em volume persistente. Evita dependência de autoridade certificadora durante o desenvolvimento; navegadores não confiam nele automaticamente.
+- **PostgreSQL em uma instância, bancos separados:** `srm_credit` atende às aplicações e `keycloak` armazena a identidade; roles distintos separam engine, workflow, migrações e Keycloak. A separação reduz o acoplamento lógico, mas banco e instância continuam compartilhando recursos e domínio de falha.
+- **Kafka single-node em KRaft:** um broker local usa três partições e fator de replicação 1. Evita operar um cluster no ambiente de desenvolvimento, ao custo de não oferecer quorum ou alta disponibilidade.
+- **Keycloak importado como configuração inicial:** o realm `srm-credit` define usuários de demonstração, papéis, cliente público `ui-r-credit` com PKCE S256 e audiência `spe-j-engine`. O cliente de API é bearer-only. Uma importação inicial reduz configuração manual; o Keycloak preserva um realm já existente, então mudanças posteriores no JSON exigem atualização explícita do realm ou recriação consciente dos dados locais.
+- **Persistência explícita:** PostgreSQL, Kafka e certificado usam volumes nomeados. `docker compose down` preserva os volumes; `docker compose down --volumes` remove dados e certificado e é uma operação destrutiva deliberada.
+- **Segredos locais:** `.env.example` oferece credenciais de demonstração para inicialização. Cada pessoa pode substituí-las em `.env`, ignorado pelo Git. Esses valores e a topologia local não são configurações de produção.
+
+Os contratos detalhados de rotas, limites, respostas, cache e logs do gateway estão em [SPEC.md](SPEC.md). Comandos, endereços, credenciais de demonstração e diagnóstico estão em [README.md](README.md).

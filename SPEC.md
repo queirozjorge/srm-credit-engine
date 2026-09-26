@@ -151,4 +151,21 @@ As metas da seção 6 usam ambiente de referência Docker com 4 vCPU e 8 GiB dis
 
 Além da contagem de liquidações e latência, observar idade da outbox, falhas e mensagens na DLQ. Logs estruturados preservam causa/stack trace e correlação. Validar navegação por teclado, estado preservado e modais conforme AGENTS.md.
 
-Na implementação, entregar também `REVIEW.md`, `AI_USAGE.md` e `DECISIONS.md`, documentando neste último o custo adicional de CNAB/aprovação cambial. Diagramas ER/C4 e comandos reais de execução serão adicionados quando produzidos; esta especificação não representa código ou testes já executados.
+Os entregáveis de revisão, registro de uso de IA e decisões ficam em [REVIEW.md](REVIEW.md), [AI_USAGE.md](AI_USAGE.md) e [DECISIONS.md](DECISIONS.md). Os comandos executáveis estão em [README.md](README.md); diagramas ER/C4 serão adicionados quando produzidos. Esta especificação descreve contratos esperados, não funcionalidades de negócio já realizadas.
+
+### G. Gateway e ambiente Compose local
+
+Este contrato descreve o gateway do ambiente local. O Compose não torna as aplicações de negócio prontas para produção; autenticação no engine e operações financeiras continuam sujeitas aos contratos anteriores e ainda não estão implementadas.
+
+- **Origem e HTTPS:** acessar `https://localhost:8443`. `http://localhost:8088` responde `308` para HTTPS e preserva caminho e query string. O certificado autoassinado de desenvolvimento cobre `localhost` e `127.0.0.1`; o Compose não altera a confiança do sistema operacional.
+- **Prefixos:** `/api/` vai para `spe-j-engine:8080`, removendo apenas `/api` e enviando `X-Forwarded-Prefix: /api`. `/auth/` vai para `keycloak:8080`, mantendo o prefixo. O issuer público é `https://localhost:8443/auth/realms/srm-credit`. Swagger do engine fica em `/api/swagger-ui.html` e OpenAPI em `/api/v3/api-docs`.
+- **Cabeçalhos e métodos:** encaminhar `Authorization` e `Idempotency-Key`; substituir cabeçalhos encaminhados pelo cliente por valores calculados no gateway e gerar um identificador de correlação. Preservar método, corpo e status do upstream. Desabilitar repetição automática de requisições e cache de upstream.
+- **Limites locais:** API aceita 10 requisições por segundo por IP, com burst 20 e sem atraso; o excesso responde `429`. Nginx aceita corpos HTTP até 6 MiB para comportar multipart; arquivos de negócio continuam limitados a 5 MiB. O limite do gateway não substitui a validação funcional no backend.
+- **Erros emitidos pelo gateway:** usar `application/json`, código estável e mensagem em português: `413 REQUISICAO_MUITO_GRANDE`, `429 LIMITE_DE_REQUISICOES_EXCEDIDO`, `502 SERVICO_INDISPONIVEL` e `504 TEMPO_LIMITE_EXCEDIDO`. `502` representa falha de conexão; `504`, timeout. Respostas de erro originadas pelo upstream mantêm seu status e corpo. O acesso público a `/actuator` e `/api/actuator` retorna `404 ROTA_INEXISTENTE`.
+- **Timeouts e cache:** conexão ao upstream em 5 s; envio e leitura em 60 s. `/api/` e `/auth/` não são armazenados em cache. `index.html` exige revalidação e não pode ser armazenado; assets com hash podem ficar em cache por um ano com `immutable`, enquanto outros assets exigem revalidação.
+- **Acesso e health:** somente Nginx publica portas no host, em `127.0.0.1:8088` e `127.0.0.1:8443`. PostgreSQL, Kafka, Keycloak e aplicações ficam na rede do Compose. Health do engine/workflow usa portas internas `8081`/`18082`, expondo somente readiness sem componentes ou detalhes; health do Keycloak fica na porta interna `9000`.
+- **Logs do gateway:** formato JSON com instante, IP, método, URI sem query string, status, bytes, duração e correlação. Não registrar Authorization, cookies, corpos, query string ou códigos/tokens OIDC.
+
+O Compose é para desenvolvimento local: usa certificado autoassinado, credenciais de demonstração, um broker Kafka com fator de replicação 1 e HTTP entre serviços dentro da rede Docker. Produção exige configuração própria de hostname, certificados, gestão de segredos, disponibilidade, backups, observabilidade e controles de rede.
+
+O README descreve comandos de execução e diagnóstico. [DECISIONS.md](DECISIONS.md) registra as escolhas do ambiente local, alternativas e custos. Esta especificação define contratos; não afirma que as funcionalidades de negócio estejam implementadas.

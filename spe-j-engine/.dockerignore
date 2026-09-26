@@ -1,0 +1,11 @@
+.git
+.idea
+.vscode
+target
+*.log
+logs
+*.tmp
+*.swp
+.env
+.env.*
+!.env.example
