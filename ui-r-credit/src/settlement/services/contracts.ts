@@ -1,16 +1,36 @@
 import { z } from 'zod';
-import { uuid, instant, date, actor, rate, term, count, totals, money, currency, pageOf } from '../../common/http/contracts';
-import { quoteSchema } from '../../exchange/services/contracts';
+import { uuid, count, term, rate, money, currency, pageOf } from '../../common/http/contracts';
 import { receivableSchema } from '../../batch/services/receivableContracts';
-export const snapshotSchema = z.object({ calculationDate: date, calculationVersion: z.string(), dayCountConvention: z.literal('ACTUAL_30'), baseRate: rate, exchangeRate: quoteSchema.nullable() });
-export const resultSchema = z.object({ uuid, settledAt: instant, totals });
-const base = { uuid, batchUuid: uuid, statusUrl: z.string().regex(/^\/api\/settlement-requests\/[0-9a-f-]+$/i), acceptedAt: instant, requestedBy: actor, snapshot: snapshotSchema };
-export const requestSchema = z.discriminatedUnion('status', [
-  z.object({ ...base, status: z.literal('PENDING'), completedAt: z.null(), result: z.null(), failure: z.null() }),
-  z.object({ ...base, status: z.literal('SETTLED'), completedAt: instant, result: resultSchema, failure: z.null() }),
-  z.object({ ...base, status: z.literal('FAILED'), completedAt: instant, result: z.null(), failure: z.object({ code: z.string(), message: z.string() }) }),
-]).refine(r => r.statusUrl === `/api/settlement-requests/${r.uuid}`);
-export const requestItemSchema = z.object({ receivable: receivableSchema, terms: z.object({ days: count, termMonths: term, spread: rate }), result: z.object({ presentValueBrl: money, discountBrl: money, paymentCurrency: currency, paymentValue: money }).nullable() });
-export const statementItemSchema = z.object({ uuid, batchUuid: uuid, requestUuid: uuid, settledAt: instant, receivableUuid: uuid, assignorUuid: uuid, assignorName: z.string(), externalReference: z.string(), paymentCurrency: currency, faceValueBrl: money, presentValueBrl: money, paymentValue: money });
+import { auditEventSchema, itemFailureSchema, settlementResultSchema } from './baseContracts';
+
+export { acceptedSnapshotSchema as snapshotSchema, auditEventSchema, itemCountsSchema, itemFailureSchema, settlementRequestSchema as requestSchema, settlementResultSchema as resultSchema } from './baseContracts';
+export type { AuditEvent, ItemCounts, ItemFailure, SettlementRequest, SettlementResult } from './baseContracts';
+
+export const requestItemSchema = z.object({
+  uuid,
+  requestUuid: uuid,
+  receivable: receivableSchema,
+  attemptNumber: count.min(1),
+  previousAttemptUuid: uuid.nullable(),
+  status: z.enum(['PENDING', 'SETTLED', 'FAILED']),
+  hasError: z.boolean(),
+  retryCount: count.max(3),
+  nextRetryAt: z.iso.datetime().nullable(),
+  terms: z.object({ days: count, termMonths: term, spread: rate }).nullable(),
+  completedAt: z.iso.datetime().nullable(),
+  failure: itemFailureSchema.nullable(),
+  result: settlementResultSchema.nullable(),
+}).refine(item => item.hasError === (item.status === 'FAILED'))
+  .refine(item => item.status === 'PENDING' ? item.completedAt === null && item.failure === null && item.result === null
+    : item.completedAt !== null && (item.status === 'SETTLED' ? item.failure === null && item.result !== null : item.failure !== null && item.result === null))
+  .refine(item => item.terms !== null || (item.status === 'FAILED' && item.failure?.stage === 'ACCEPTANCE'))
+  .refine(item => item.status !== 'PENDING' || item.nextRetryAt === null || item.retryCount < 3)
+  .refine(item => item.status === 'PENDING' || item.nextRetryAt === null)
+  .refine(item => item.result === null || item.result.paymentCurrency === item.receivable.paymentCurrency)
+  .refine(item => item.previousAttemptUuid !== item.uuid);
+export type SettlementRequestItem = z.infer<typeof requestItemSchema>;
+
+export const statementItemSchema = z.object({ uuid, batchUuid: uuid, requestUuid: uuid, settledAt: z.iso.datetime(), receivableUuid: uuid, assignorUuid: uuid, assignorName: z.string(), externalReference: z.string(), paymentCurrency: currency, faceValueBrl: money, presentValueBrl: money, paymentValue: money });
 export const statementPageSchema = pageOf(statementItemSchema);
-export type SettlementRequest = z.infer<typeof requestSchema>;
+export const requestItemPageSchema = pageOf(requestItemSchema);
+export const auditEventPageSchema = pageOf(auditEventSchema);

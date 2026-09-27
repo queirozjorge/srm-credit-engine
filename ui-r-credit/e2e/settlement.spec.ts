@@ -6,6 +6,7 @@ const id = '00000000-0000-4000-8000-000000000002';
 test('simula, confirma com ciclo estável e acompanha sem bloquear até resultado integral', async ({ page }, info) => {
   await page.goto(`/lotes/${id}`);
   await page.getByRole('button', { name: text.demo.operator, exact: true }).click();
+  await page.getByRole('tab', { name: text.batch.detailTabs.requests }).click();
   await page.getByRole('button', { name: text.pricing.refresh, exact: true }).click();
   const trigger = page.getByRole('button', { name: flow.requestAction, exact: true, includeHidden: true });
   await expect(trigger).toBeEnabled();
@@ -57,6 +58,7 @@ test('simula, confirma com ciclo estável e acompanha sem bloquear até resultad
 test('gestor consulta sem ação de simulação ou liquidação', async ({ page }) => {
   await page.goto(`/lotes/${id}`);
   await page.getByRole('button', { name: text.demo.manager, exact: true }).click();
+  await page.getByRole('tab', { name: text.batch.detailTabs.requests }).click();
   await expect(page.getByRole('table', { name: text.batch.receivables })).toBeVisible();
   await expect(page.getByRole('button', { name: text.pricing.refresh, exact: true })).toHaveCount(0);
   await expect(page.getByRole('button', { name: flow.requestAction, exact: true })).toHaveCount(0);

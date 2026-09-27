@@ -13,20 +13,20 @@ import { useSettlement } from '../services/useSettlement';
 import { useSettlementPolling } from '../services/useSettlementPolling';
 import { AcceptedRequest } from './AcceptedRequest';
 import { locale, translations } from '../../i18n/pt-BR';
-export function SettlementFlow({ batch, available }: { batch: BatchDetail; available: boolean }) {
+export function SettlementFlow({ batch, available, active = true, receivablesVisible = true }: { batch: BatchDetail; available: boolean; active?: boolean; receivablesVisible?: boolean }) {
   const location = useLocation();
   const text = translations[locale].settlement.flow; const { identity } = useSession(); const operation = useSettlement(batch);
-  const updating = useSettlementPolling(batch.activeRequest);
+  const updating = useSettlementPolling(batch.activeRequest, receivablesVisible);
   const [confirmation, setConfirmation] = useState<Simulation | null>(null); const [open, setOpen] = useState(false);
-  const allowed = available && can(identity, 'settle') && (batch.status === 'READY' || batch.status === 'FAILED');
+  const allowed = available && can(identity, 'settle') && batch.status === 'READY';
   function confirm(simulation: Simulation | null) { if (!simulation || confirmation || !allowed) return; setConfirmation(simulation); setOpen(true); }
   return <Stack spacing={2.5} sx={{ minWidth: 0 }}>
     {batch.activeRequest && <AcceptedRequest request={batch.activeRequest} />}
     {batch.activeRequest && <RequestHistory batchUuid={batch.uuid} />}
     {updating && <Typography role="status" variant="caption">{text.updating}</Typography>}
-    {can(identity, 'simulate') && <Box sx={{ display: batch.status === 'READY' || batch.status === 'FAILED' ? 'block' : 'none' }}><SimulationPanel autoStart={(location.state as { simulate?: boolean } | null)?.simulate === true} expectedCount={batch.itemCount} scope={`${batch.uuid}:${batch.status}:${batch.activeRequest?.uuid ?? ""}`} input={{ batchUuid: batch.uuid }} enabled={allowed && !operation.pending && !operation.uncertain}
+    {can(identity, 'simulate') && <Box sx={{ display: batch.status === 'READY' ? 'block' : 'none' }}><SimulationPanel autoStart={active && (location.state as { simulate?: boolean } | null)?.simulate === true} expectedCount={batch.itemCount} scope={`${batch.uuid}:${batch.status}:${batch.activeRequest?.uuid ?? ""}`} input={{ batchUuid: batch.uuid }} enabled={active && allowed && !operation.pending && !operation.uncertain}
       action={simulation => <Button variant="contained" disabled={!simulation || !allowed || operation.pending || operation.uncertain} onClick={() => confirm(simulation)}>
-        {batch.status === 'FAILED' ? text.retry : text.requestAction}</Button>} /></Box>}
+        {text.requestAction}</Button>} /></Box>}
     {operation.uncertain && <Stack direction="row" useFlexGap flexWrap="wrap" gap={1}>
       <Button disabled={operation.pending} onClick={() => { void operation.reconcile(); }}>{text.reconcile}</Button>
       {operation.checked && allowed && <Button disabled={operation.pending} onClick={() => { void operation.submit(); }}>{text.repeat}</Button>}

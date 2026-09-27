@@ -19,7 +19,7 @@ export function aggregateDashboard(kind: Dashboard['period']['kind'], batches: S
     const day = rows.filter(row => financialDate(new Date(row.settledAt)) === date);
     dailyPayments.push({ date, paymentBrl: sum(day.filter(row => row.paymentCurrency === 'BRL').map(row => row.paymentValue)), paymentUsd: sum(day.filter(row => row.paymentCurrency === 'USD').map(row => row.paymentValue)) });
   }
-  const batchCounts = { READY: 0, PENDING: 0, SETTLED: 0, FAILED: 0 }; batches.forEach(row => { batchCounts[row.batch.status]++; });
+  const batchCounts = { READY: 0, PENDING: 0, SETTLED: 0, PARTIALLY_SETTLED: 0, FAILED: 0 }; batches.forEach(row => { batchCounts[row.batch.status]++; });
   const quote = currentQuote(exchange.quotes, now);
   return dashboardSchema.parse({ generatedAt: new Date(now).toISOString(), period: { kind, start, end, timeZone: 'America/Sao_Paulo' }, totals, dailyPayments, batchCounts,
     pendingExchangeProposals: exchange.proposals.filter(row => row.status === 'PENDING').length, exchange: { current: quote.current, status: quote.currentStatus } });

@@ -31,16 +31,16 @@ test('bloqueia duplo envio; POST sem body; após rede consulta antes de repetir 
 test('409 reconcilia operação ativa e impede novo POST', async () => {
   let posts = 0;
   server.use(http.post('/api/batches/:id/settlements', () => { posts++; return HttpResponse.json({ code: 'CONFLITO', message: 'Operação em andamento.' }, { status: 409 }); }),
-    http.get('/api/batches/:id', () => HttpResponse.json({ ...batchFixture, status: 'PENDING', activeRequest: requestFixture })));
+    http.get('/api/batches/:id', () => HttpResponse.json({ ...batchFixture, status: 'PENDING', counts: requestFixture.counts, activeRequest: requestFixture })));
   const { result } = renderHook(() => useSettlement(batchFixture), { wrapper });
   await act(() => result.current.submit()); await act(() => result.current.submit()); expect(posts).toBe(1);
   await waitFor(() => expect(result.current.uncertain).toBe(false));
 });
-test('falha definitiva permite nova chave apenas após novo envio explícito', async () => {
+test('falha definitiva não permite reenviar o lote inteiro', async () => {
   const keys: (string | null)[] = [];
   server.use(http.post('/api/batches/:id/settlements', ({ request }) => { keys.push(request.headers.get('Idempotency-Key'));
-    return HttpResponse.json({ ...requestFixture, status: 'FAILED', completedAt: requestFixture.acceptedAt, failure: { code: 'FALHA', message: 'Lote não liquidado.' } }); }));
+    return HttpResponse.json({ ...requestFixture, status: 'FAILED', counts: { ready: 0, pending: 0, settled: 0, failed: 1 }, completedAt: requestFixture.acceptedAt }); }));
   const { result } = renderHook(() => useSettlement(batchFixture), { wrapper });
   await act(() => result.current.submit()); expect(keys).toHaveLength(1);
-  await act(() => result.current.submit()); expect(keys).toHaveLength(2); expect(keys[0]).not.toBe(keys[1]);
+  await act(() => result.current.submit()); expect(keys).toHaveLength(1);
 });

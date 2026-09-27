@@ -4,8 +4,8 @@ import { useQuery } from '@tanstack/react-query';
 import { FinancialTotals } from '../../common/components/FinancialTotals';
 import { DataTable } from '../../common/components/DataTable';
 import { useApiClient } from '../../common/http/useApiClient';
-import { pageOf } from '../../common/http/contracts';
 import { useAppFeedback } from '../../common/components/feedbackContext';
+import { pageOf } from '../../common/http/contracts';
 import { formatCivilDate, formatInstant } from '../../common/format/dates';
 import { formatDecimal, moneyFormat, rateFormat } from '../../common/format/decimal';
 import { BatchStatus } from '../../batch/components/BatchStatus';
@@ -14,7 +14,7 @@ import { locale, translations } from '../../i18n/pt-BR';
 const itemsSchema = pageOf(requestItemSchema);
 export function AcceptedRequest({ request }: { request: SettlementRequest }) {
   const reduced = useMediaQuery('(prefers-reduced-motion: reduce)');
-  const text = translations[locale].settlement.flow; const api = useApiClient(); const { beginLoading, showWarning } = useAppFeedback();
+  const text = translations[locale].settlement.flow; const api = useApiClient(); const { beginLoading } = useAppFeedback();
   const [expanded, setExpanded] = useState(false); const [pagination, setPagination] = useState({ page: 1, size: 5 });
   const previous = useRef<{ uuid: string; status: string; page: number; size: number } | null>(null);
   const items = useQuery({ queryKey: ['settlement', 'items', request.uuid, request.status, pagination], enabled: expanded,
@@ -30,18 +30,20 @@ export function AcceptedRequest({ request }: { request: SettlementRequest }) {
     <Typography variant="body2" sx={{ overflowWrap: 'anywhere' }}>{text.request(request.uuid, formatInstant(request.acceptedAt), request.requestedBy.subject)}</Typography>
     <Typography variant="body2">{text.snapshot(formatCivilDate(request.snapshot.calculationDate), formatDecimal(request.snapshot.baseRate, rateFormat), request.snapshot.calculationVersion)}</Typography>
     {request.snapshot.exchangeRate && <Typography variant="body2">{text.exchange(formatDecimal(request.snapshot.exchangeRate.rate, rateFormat), formatInstant(request.snapshot.exchangeRate.effectiveFrom))}</Typography>}
+    <Typography variant="body2">{text.requestCounts(request.counts.pending, request.counts.settled, request.counts.failed)}</Typography>
     {request.status === 'PENDING' && <Typography role="status">{text.pending}</Typography>}
-    {request.result && <><Typography variant="body2">{text.completed(formatInstant(request.result.settledAt))}</Typography><FinancialTotals values={request.result.totals} /></>}
-    {request.failure && <Button sx={{ alignSelf: 'flex-start' }} onClick={() => showWarning({ message: request.failure!.message })}>{text.failure}</Button>}
+    {request.completedAt && <Typography variant="body2">{text.completed(formatInstant(request.completedAt))}</Typography>}
+    <FinancialTotals values={request.settledTotals} />
     <Button sx={{ alignSelf: 'flex-start' }} onClick={() => setExpanded(!expanded)} aria-expanded={expanded}>{text.items}</Button>
     <Collapse in={expanded} timeout={reduced ? 0 : 180}>
     <Button disabled={items.isFetching} onClick={() => { void items.refetch(); }}>{translations[locale].batch.refreshList}</Button>
     {items.data && <DataTable label={text.items} rows={items.data.items} getRowKey={row => row.receivable.uuid} maxHeight={260}
       columns={[
         { id: 'reference', label: translations[locale].batch.reference, render: row => row.receivable.externalReference },
-        { id: 'days', label: translations[locale].pricing.days, render: row => row.terms.days },
-        { id: 'spread', label: translations[locale].pricing.spread, render: row => formatDecimal(row.terms.spread, rateFormat) },
-        { id: 'payment', label: translations[locale].pricing.payment, render: row => request.status === 'SETTLED' && row.result ? `${row.result.paymentCurrency} ${formatDecimal(row.result.paymentValue, moneyFormat)}` : text.noResult },
+        { id: 'status', label: translations[locale].batch.status, render: row => translations[locale].batch.statuses[row.status] },
+        { id: 'days', label: translations[locale].pricing.days, render: row => row.terms ? row.terms.days : text.noResult },
+        { id: 'spread', label: translations[locale].pricing.spread, render: row => row.terms ? formatDecimal(row.terms.spread, rateFormat) : text.noResult },
+        { id: 'payment', label: translations[locale].pricing.payment, render: row => row.result ? `${row.result.paymentCurrency} ${formatDecimal(row.result.paymentValue, moneyFormat)}` : text.noResult },
       ]} pagination={{ ...pagination, totalItems: items.data.totalItems, disabled: items.isFetching, onChange: setPagination }} />}
     </Collapse>
   </Stack></Paper>;

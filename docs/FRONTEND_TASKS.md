@@ -1,6 +1,6 @@
 # Frontend — mapa de telas e backlog
 
-**26/09/2026 · Tasks 01–12 concluídas; task 13 implementada, com validação autenticada pendente; task 14 bloqueada pelas APIs ausentes; task 15 com homologação frontend/CI preparada; aceite integrado bloqueado.**
+**27/09/2026 · Tasks 01–12 concluídas no contrato anterior; adequação frontend das tasks 16.1–16.9 concluída contra mocks. Task 13 com validação autenticada pendente; task 14 bloqueada pelas APIs ausentes; aceite integrado pendente.**
 
 Objetivo: implementar o [wireframe](index.html) em React/Material UI, preservando identidade visual e fluxos. O frontend possui telas funcionais verificadas com mocks e integração OIDC implementada; endpoints de negócio ainda não estão disponíveis. Contratos funcionais, payloads, status e permissões têm fonte única no [anexo H da SPEC](../SPEC.md#h-contratos-propostos-para-o-frontend-e-seus-mocks). Convenções de implementação e validação visual estão em [AGENTS.md](../AGENTS.md).
 
@@ -21,7 +21,7 @@ As rotas abaixo são de navegação planejada, diferentes dos endpoints HTTP. `c
 | Dashboard — `dashboard` | `/dashboard` · `dashboard` | Período, moeda do gráfico; abrir novo lote, lotes, câmbio e extrato conforme papel. | Carregando, com dados, período vazio, consulta indisponível/dados anteriores desatualizados; contrato H.8. |
 | Lotes — `batches` | `/lotes` · `batch` | Buscar UUID/cedente, filtrar situação, paginar, abrir detalhe; novo lote só operador. | Carregando, lista, vazio, falha em modal; retorno preserva consulta. H.4. |
 | Novo lote — `new-batch` | `/lotes/novo` · `batch` | Operador escolhe manual/CSV/CNAB, preenche/revisa, confirma cadastro. | Rascunho, validação, prévia válida/inválida, envio bloqueado, conflito, resultado incerto de rede, cadastro `READY`; nunca liquida automaticamente. H.4. |
-| Detalhe de lote — `batch-detail` | `/lotes/:batchUuid` · `batch`, `pricing`, `settlement` | Consultar itens; operador simula, confirma liquidação, acompanha ou tenta novamente após falha; abrir câmbio. | Não encontrado, `READY`, `PENDING`, `SETTLED`, `FAILED`; simulação desatualizada e bloqueio USD; condições aceitas distintas da simulação. H.4–H.7. |
+| Detalhe de lote — `batch-detail` | `/lotes/:batchUuid` · `batch`, `pricing`, `settlement` | Consultar itens; operador simula, confirma liquidação, acompanha ou tenta novamente após falha; abrir câmbio. | Não encontrado, `READY`, `PENDING`, `SETTLED`, `PARTIALLY_SETTLED`, `FAILED`; simulação desatualizada e bloqueio USD; condições aceitas distintas da simulação. H.4–H.7. |
 | Cedentes — `registers` | `/cedentes` · `register` | Ambos os papéis pesquisam, paginam, consultam detalhe e abrem cadastro/edição. Seleção do detalhe em `?cedente=UUID`. | Lista/vazio, detalhe/não encontrado, formulário inválido, envio, duplicidade, conflito de versão; CNPJ imutável após cadastro. H.3. |
 | Câmbio — `exchange` | `/cambio` · `exchange` | Referência, cotação e abas de histórico; operador propõe; gestor decide; lote de origem opcional em `?lote=UUID`. | Cotação válida/expirada/ausente, referência indisponível, proposta pendente/aprovada/rejeitada, autoaprovação bloqueada e conflito de decisão. H.7. |
 | Extrato — `statement` | `/extrato` · `settlement` | Período, cedente, moeda, paginação, abrir lote. | Carregando, itens concluídos, vazio, período inválido, falha em modal; H.6. |
@@ -31,13 +31,13 @@ As rotas abaixo são de navegação planejada, diferentes dos endpoints HTTP. `c
 | Acesso negado — `forbidden` | `/acesso-negado` · `auth` | Voltar a destino permitido; sair da sessão se não houver papel reconhecido. | `403`/guard de papel, sem liberar ações pelo body ou apenas esconder botões. |
 | Página inexistente — `not-found` | `*` · `app` | Voltar ao dashboard autenticado ou à entrada. | Rota inexistente; não confundir com lista vazia ou lote inexistente. |
 
-A raiz sem retorno OIDC encaminha conforme sessão para entrada/dashboard. Não criar telas de login com senha, auditoria editável, liquidação parcial, edição de lote cadastrado ou seletor de idioma.
+A raiz sem retorno OIDC encaminha conforme sessão para entrada/dashboard. Não criar telas de login com senha, auditoria editável, edição de lote cadastrado ou seletor de idioma.
 
 ### Subfluxos, componentes e estado de interação
 
 - **Novo lote:** escolha de origem, preenchimento e revisão são etapas da mesma tela. Manual mantém itens editáveis antes do cadastro. Arquivo abre modal com prévia/erros por linha; confirmação é integral. Seleção de cedente usa busca paginada, sem carregar todos os cadastros.
 - **Cedentes:** detalhe é uma subvisão; cadastro/edição são modais. Após mutação, atualizar somente a visão afetada. CNPJ bloqueado em edição; conflito mantém conteúdo para correção.
-- **Liquidação:** confirmação mostra lote inteiro e caráter indicativo da simulação. `202` encerra AppLoader, mantém acompanhamento não bloqueante. `FAILED` não oferece resultado parcial; nova tentativa exige confirmação e nova chave.
+- **Liquidação:** confirmação inicial abrange todos os títulos; sucessos individuais permanecem visíveis mesmo durante processamento. Estado parcial mostra contagens, flag de falha e ação para consultar erro/auditoria em modal. Reprocessamento seleciona somente falhos, exige justificativa, confirmação e nova chave; bloqueado enquanto outra solicitação do lote estiver pendente. `202` encerra AppLoader e mantém acompanhamento discreto conforme H.6.
 - **Câmbio:** propostas e cotações são abas; proposta e confirmações/justificativa de rejeição são modais. A referência é consulta independente do histórico. Aprovação não solicita liquidação nem refaz condições já aceitas.
 - **Feedback:** erros de API/alertas operacionais no modal comum; validações locais junto aos campos. Falha de importação fica no modal reutilizável, com detalhes por linha. Estados vazios e indicadores de estado são conteúdo, não erros inline.
 - **Carregamento:** iniciais e mutações explícitas usam AppLoader sobre conteúdo montado; simulação durante digitação, polling e renovação silenciosa são não bloqueantes. Botões de mutação desabilitam imediatamente.
@@ -70,12 +70,13 @@ Cada task entrega sua implementação e verificação proporcional. Os critério
 | 07 — Lotes | Lista paginada, filtros, detalhe e recebíveis. | 05 | Estados contratuais e recurso ausente; retorno preserva contexto. | Concluída |
 | 08 — Cadastro manual | Fluxo guiado e revisão integral de recebíveis. | 06, 07 | 1–1.000 itens; duplicidades/validações; cadastro `READY` sem liquidação. | Concluída |
 | 09 — CSV/CNAB | Upload, prévia, erros por linha e revisão de moedas CNAB. | 08 | 5 MiB; prévia não persiste; erro impede cadastro parcial; parser real externo. | Concluída |
-| 10 — Simulação/liquidação | Simulação indicativa, confirmação, chave, snapshot, acompanhamento e nova tentativa. | 07, 08 | Resposta antiga ignorada, chave preservada, `409`, polling suspenso/retomado e nenhuma liquidação parcial. | Concluída |
+| 10 — Simulação/liquidação | Simulação indicativa, confirmação, chave, snapshot, acompanhamento e nova tentativa. | 07, 08 | Resposta antiga ignorada, chave preservada, `409`, polling suspenso/retomado; evidência histórica do contrato integral. | Concluída no contrato anterior; adequação na task 16 |
 | 11 — Câmbio | Cotação/referência, proposta, histórico e decisão por outro usuário. | 05, 10 | Autoaprovação/concorrência bloqueadas; referência indisponível não bloqueia proposta manual; retorno sem liquidar. | Concluída |
 | 12 — Extrato/dashboard | Extrato paginado e dashboard agregado com gráfico acessível em SVG. | 07, 10, 11 | Filtros nos itens, datas de São Paulo, moedas separadas e estados vazio/indisponível. | Concluída |
 | 13 — Keycloak | Login PKCE, retorno na raiz, renovação, logout e Bearer. | Marco 1 | Tokens em memória; sessão real, identidade/papéis e caches isolados. | Implementada; validação autenticada pendente |
 | 14 — APIs reais | Integrar por domínio: cedentes, lotes/importação, simulação, câmbio, liquidação, extrato/dashboard. | 13 e cada API implementada | OpenAPI alinhado; mesmas telas sem mocks; respostas, upload e atualização pontual verificados. | Bloqueada: APIs de negócio ausentes |
-| 15 — Homologação | Jornada completa, visual/acessibilidade, testes na CI e documentação de execução. | 14; testes incrementais desde 02 | Critérios de AGENTS/SPEC demonstrados; separar evidências mock e reais. | Frontend/CI preparados; aceite integrado bloqueado |
+| 15 — Homologação | Jornada completa, visual/acessibilidade, testes na CI e documentação de execução. | 14 e 16; testes incrementais desde 02 | Critérios de AGENTS/SPEC demonstrados; separar evidências mock e reais. | Frontend/CI preparados; aceite integrado bloqueado |
+| 16 — Liquidação por título | Adequar contratos/schemas/mocks, estados de lote/título, seleção de falhos, justificativa, erro/histórico em modal, polling por versão, extrato/dashboard e traduções. | Revisão SPEC/DATABASE de 27/09/2026; componentes existentes. | Sucessos preservados; parcial explícito; reprocessamento só de falhos; chaves/fingerprints preservados; auditoria consultável; cinco ciclos de modais e testes de concorrência/reentrega no backend antes do aceite integrado. | Frontend demonstrativo concluído nas tasks 16.1–16.9; integração real pendente |
 
 Tasks 06 e 07 são independentes após a fundação; a ordem restante preserva os fluxos que precisam ser verificados juntos. Esta indicação de dependências não implica execução automática de outras tasks.
 
@@ -90,10 +91,14 @@ Mocks reproduzem HTTP, payloads e transições de H; não dão evidência de tra
 | Cedentes | Operador e gestor cadastram/editam; documento duplicado, versão antiga, inativo no histórico e indisponível para novos títulos. |
 | Lote/importação | Lote misto de cedentes/moedas; 0, 1, 1.000 e 1.001 itens; arquivo no limite e acima; inválido por linha/estrutura; duplicidade entre entradas; prévia válida seguida de rejeição no cadastro definitivo. |
 | Simulação | Debounce, resposta antiga, data vencida, prazo zero, cotação ausente/expirada, valores nos limites; resultados determinísticos dos golden cases, sem calcular juros no frontend. |
-| Liquidação | `READY`, aceite `202`, chave igual pendente/concluída/falha, chave de outro lote, outra chave pendente/concluída, resposta de aceite perdida, falha total e nova tentativa; snapshot não muda com cotação nova. |
+| Liquidação | Dez títulos com nove sucessos/uma falha; progresso com resultados já visíveis; todos falhos; parcial; replay da mesma intenção; chave com seleção/justificativa diferente; outro operador; reprocessamento de subconjunto; tentativa antiga; título já liquidado rejeitado; snapshots novos apenas em tentativa manual; histórico e flags coerentes. |
 | Câmbio | Primeira cotação manual, referência indisponível, cotação exatamente em 24h e além, decisão por identidade distinta, ambos os papéis sem autoaprovação, rejeição justificada, conflito e proposta preservada após outra cotação ser aprovada. |
 | Extrato/dashboard | Somente concluídos, fronteiras inclusiva/exclusiva, fuso do navegador diferente, filtro por item em lote misto, moeda sem movimento, período vazio e falha preservando dados anteriores identificados como desatualizados. |
 | Interação | Teclado, foco restaurado, clique durante saída, cinco ciclos por modal, menu recolhido, zoom 200%, movimento reduzido; desktop 1366×768/1920×1080 e celular 320/390/430 px. |
+
+## Evidências históricas das tasks 01–15
+
+Os registros abaixo descrevem o código e testes executados antes da revisão de liquidação por título. Referências a confirmação integral, falha total, POST sem body em toda tentativa e ausência de estados parciais não são requisitos atuais. A task 16 substitui esses comportamentos conforme a SPEC; não declarar os testes antigos como validação da regra nova.
 
 ## Registro da task 01
 
@@ -249,3 +254,48 @@ Navegador configurado em português e fuso diferente de São Paulo. Reforçada a
 A revisão visual encontrou perda de foco após trocar o tamanho da página. A falha foi reproduzida por teste de teclado e corrigida no provedor comum: preservar o controle de origem quando o foco passa por opções temporárias de menus/listas. Teste do extrato agora exige foco correto após atualizar, limpar filtros e alterar tamanho.
 
 Verificação final da task 15: tipagem, lint, build e 121 testes unitários aprovados. Após a correção de foco, passaram 80 cenários Chromium: 58 demonstrativos, 12 de componentes e dez de produção/OIDC contratual, em desktop e celular. Fluxos incluem cinco ciclos de modais/combobox, teclado, retorno de foco, zoom 200%, movimento reduzido, larguras de 320 a 1920 px e consultas no fuso de São Paulo com navegador em Los Angeles. Capturas de extrato e modal inspecionadas. Workflow validado como YAML; CI remota não executada. `git diff --check` sem erros. Avisos conhecidos do Zod e tamanho do bundle permanecem; homologação integrada continua bloqueada pelas tasks 13/14.
+
+
+## Registro da task 16.1 — Contratos e estados por título
+
+- Schemas executáveis agora separam estados do lote, da solicitação, da tentativa e do título. Incluem contagens agregadas, `PARTIALLY_SETTLED`, resultados/totais realizados e falhas por título; refinamentos rejeitam contagens, flags, resultados, condições e transições incompatíveis.
+- Contratos de lote e liquidação deixaram de depender circularmente um do outro. O estado de concorrência interno do título não é exposto no contrato HTTP; `progressVersion` continua no lote para acompanhamento agregado.
+- Fixtures e handlers preservam tentativas/resultados por item, atualizam contagens e incluem o novo estado nas listas/dashboard. O cenário misto e progressivo foi acrescentado na task 16.2; reprocessamento explícito permanece para uma task posterior.
+- A tela de solicitação mostra progresso e totais realizados e não descreve falha individual como rollback do lote. A ação legada de repetir o lote inteiro após falha foi bloqueada; a seleção explícita de falhos e justificativa será implementada em task posterior.
+- Nenhuma dependência nova nem pattern adicional. Reutilizados Zod, schemas compartilhados, QueryClient e componentes atuais.
+
+Verificação da task 16.1: tipagem, lint, build de produção e 126 testes unitários aprovados. Avisos existentes do Zod e do tamanho do bundle permanecem não bloqueantes; `git diff --check` sem erros. Mocks não comprovam API real nem processamento financeiro.
+
+
+## Registro da task 16.2 — Cenário parcial nos mocks
+
+- Mocks de simulação e liquidação aceitam até 1.000 títulos do cenário financeiro demonstrativo fixo, com valores ainda representados como strings e multiplicados por centavos com `BigInt`.
+- O resultado parcial determinístico liquida nove de dez títulos após o primeiro ciclo de acompanhamento, mantém um título pendente e conclui esse título com falha no ciclo seguinte. O histórico da solicitação, a flag/erro do título, os totais realizados, o estado agregado do lote e `progressVersion` permanecem coerentes.
+- Os nove sucessos aparecem no extrato e nos agregados do dashboard mesmo enquanto o décimo título aguarda. Solicitações novas sobre lote `FAILED` ou `PARTIALLY_SETTLED` exigem seleção explícita em vez de repetir o lote inteiro.
+- Reutilizados os handlers MSW e schemas existentes; nenhuma dependência nova. O cenário valida a UI contra mocks, não confirma comportamento de API ou worker reais.
+
+Verificação da task 16.2: tipagem, lint, build de produção e 127 testes unitários aprovados; `git diff --check` sem erros. Permanecem os avisos conhecidos do Zod e do tamanho do bundle.
+
+
+## Registro da task 16.3 — Detalhe do lote com resumo, abas e auditoria
+
+- O detalhe mantém resumo operacional, contagens e totais realizados fora das abas, para que permaneçam visíveis ao alternar entre títulos, solicitações e auditoria. A aba selecionada e a paginação da auditoria ficam na URL; a paginação dos títulos continua preservada.
+- Títulos mostram o estado textual e a flag acessível de erro. “Consultar motivo da falha” abre modal com mensagem, etapa, horário e código, com acesso direto à aba de auditoria. O modal permanece montado durante a saída e usa o ciclo acessível comum de foco.
+- A auditoria paginada é consultada somente quando a aba é selecionada e apresenta evento, responsável, título, horário e detalhes permitidos pelo contrato. Mocks agora fornecem eventos de cadastro, solicitação, aceite de tentativa, sucesso e falha para a demonstração.
+- Os painéis permanecem montados durante a troca de abas, preservando seleção local, modal e estados de interação. Polling continua restrito ao lote e seus recebíveis; não há recarga, remount ou consulta da auditoria a cada ciclo.
+- O erro abre e fecha em cinco ciclos consecutivos; um clique disparado durante a saída não reabre o modal.
+- Reutilizados `AppDialog`, `DataTable`, `FinancialTotals`, schemas Zod e infraestrutura de query existente; nenhuma dependência ou pattern nova.
+
+Verificação da task 16.3: tipagem, lint, build de produção e 129 testes unitários aprovados; `git diff --check` sem erros. O build mantém os avisos conhecidos de anotação do Zod e do tamanho do bundle. Os testes de navegador não rodaram porque o executável Chromium exigido pelo Playwright não está instalado neste ambiente.
+
+
+## Registro das tasks 16.4–16.9 — Reprocessamento seletivo e integração frontend
+
+- **16.4 — Serviço e intenção idempotente:** o contrato normaliza e ordena UUIDs, remove espaços externos da justificativa e rejeita duplicados. O controller cria uma chave por nova confirmação e preserva exatamente chave, seleção e justificativa após incerteza; oferece repetição explícita ou reconciliação e consulta a solicitação persistida em `422 NENHUM_TITULO_APTO`.
+- **16.5 — Seleção e confirmação:** operadores selecionam apenas títulos `FAILED` já consultados, mantendo a seleção válida ao paginar e alternar abas. A página visível remove seleções cujo estado/tentativa mudou; a intenção de rede incerta permanece imutável. A confirmação apresenta referências e UUIDs, exige justificativa, mostra simulação indicativa das novas condições e não substitui a validação do backend. Gestores mantêm somente acesso de consulta.
+- **16.6 — Polling:** enquanto pendente, consulta o lote a cada cinco segundos. Uma mudança de `progressVersion` atualiza somente a página de títulos visível, com no máximo uma consulta adicional por ciclo, preservando paginação e estados locais. O acompanhamento suspende em aba oculta, saída ou sessão inválida e não usa bloqueio global.
+- **16.7 — Extrato e dashboard:** adicionados testes de tela para títulos já liquidados durante processamento parcial, totais BRL/USD separados, cinco contagens globais e ausência de nova consulta ao alternar moeda. Os serviços existentes já faziam a agregação requerida.
+- **16.8 — Mocks:** handlers verificam fingerprint global por lote, modalidade, seleção ordenada e justificativa normalizada; rejeitam reutilização de chave com outra intenção, títulos não falhos e conflitos pendentes. Tentativas, vínculos, auditoria, sucessos anteriores, totais e `progressVersion` permanecem coerentes.
+- **16.9 — Cache, documentação e verificação:** a atualização local do lote reconcilia deltas de solicitações, totais decimais e replay histórico sem duplicar resultados. Documentação de aceite separa claramente evidência de mocks de integração real.
+
+Verificação final das tasks 16.4–16.9: 39 arquivos de teste e 151 testes unitários passaram; typecheck, lint, build e `git diff --check` passaram. O build mantém os avisos conhecidos do Zod e do tamanho do bundle. Os testes E2E não foram executados porque o Chromium do Playwright não está instalado neste ambiente. As verificações demonstrativas não validam API real, banco, Kafka, motor financeiro ou auditoria persistida.

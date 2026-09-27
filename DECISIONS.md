@@ -1,6 +1,6 @@
 # DECISIONS — SRM Credit Engine
 
-**Decisões aprovadas em 25/09/2026 · Estado atualizado em 26/09/2026 · Escopo Sênior.**
+**Decisões aprovadas em 25/09/2026 · Estado atualizado em 27/09/2026 · Escopo Sênior.**
 
 Este documento registra escolhas, alternativas e custos. Os contratos funcionais e operacionais permanecem em [SPEC.md](SPEC.md); as convenções de implementação estão em [AGENTS.md](AGENTS.md). A infraestrutura local com Docker Compose, Nginx e Keycloak está configurada. As funcionalidades de negócio ainda não foram implementadas; as expectativas de carga abaixo precisam ser verificadas por medição.
 
@@ -8,22 +8,22 @@ Este documento registra escolhas, alternativas e custos. Os contratos funcionais
 
 ### Contexto e decisão
 
-Manter `spe-j-engine` e `spe-j-workflow` como aplicações Maven independentes. A premissa é que o processamento dos lotes concentre a maior carga de cálculo e gravação: o worker calcula os valores definitivos a partir do snapshot aceito e executa a liquidação atômica de todos os recebíveis do lote.
+Manter `spe-j-engine` e `spe-j-workflow` como aplicações Maven independentes. A premissa é que o processamento dos lotes concentre a maior carga de cálculo e gravação: o worker calcula os valores definitivos a partir do snapshot aceito e executa uma liquidação atômica por recebível, preservando sucessos quando outro título falha.
 
-O engine atende às requisições HTTP, autentica e autoriza usuários, mantém os cadastros, realiza simulações, valida o aceite, fixa as condições financeiras e publica os comandos pela outbox. O worker consome esses comandos, realiza os cálculos da liquidação e persiste resultados, auditoria de sucesso e conclusão do lote na mesma transação.
+O engine atende às requisições HTTP, autentica e autoriza usuários, mantém os cadastros, realiza simulações, valida o aceite, fixa as condições financeiras e publica os comandos pela outbox. O worker consome esses comandos, realiza os cálculos da liquidação e persiste resultado, auditoria, conclusão individual e atualização dos agregados em uma transação por título.
 
 A separação permite aumentar a capacidade dos workers conforme a demanda de liquidação, sem replicar a API na mesma proporção, e isola os recursos de execução do processamento em relação ao atendimento HTTP. O engine continua calculando as simulações; o worker concentra o cálculo definitivo e a execução das liquidações.
 
 ### Papel do Kafka e garantias de integridade
 
-Kafka desacopla o aceite HTTP do processamento, mantém os comandos disponíveis conforme sua configuração de durabilidade e retenção e distribui lotes entre os workers de um mesmo consumer group. O UUID do lote é a chave de particionamento, preservando o processamento ordenado por partição conforme o contrato da SPEC. A fila permite absorver picos enquanto os workers processam a demanda.
+Kafka desacopla o aceite HTTP do processamento, mantém os comandos disponíveis conforme sua configuração de durabilidade e retenção e distribui títulos entre os workers de um mesmo consumer group. O UUID do título é a chave de particionamento, preservando o processamento ordenado por partição conforme o contrato da SPEC. A fila permite absorver picos enquanto os workers processam a demanda.
 
 A integridade e a unicidade do efeito financeiro dependem do conjunto de mecanismos:
 
 - **Outbox transacional:** associa a publicação à solicitação aceita e permite recuperar falhas de envio.
 - **Kafka:** transporta os comandos e permite reentregas; a aplicação assume entrega pelo menos uma vez.
 - **Idempotência persistida:** reconhece uma solicitação já aceita e impede sua reexecução financeira.
-- **PostgreSQL:** transação única por lote, optimistic locking e restrições de unicidade impedem resultados duplicados e liquidações parciais.
+- **PostgreSQL:** transação por título, optimistic locking e unicidade por recebível impedem liquidação duplicada; o lote admite resultados parciais e preserva cada sucesso.
 
 Kafka e o consumer group, isoladamente, não garantem liquidação única. Uma falha após o commit e antes da confirmação do consumo pode repetir a mensagem; o worker deve reconhecer o resultado existente. A recuperação detalhada está no anexo D da SPEC.
 
@@ -36,7 +36,7 @@ Uma única aplicação modular poderia atender à API e às liquidações com me
 - Dois builds e processos de implantação, além da operação do Kafka, outbox, retries e DLQ.
 - Maior esforço de configuração, observabilidade, testes de integração e diagnóstico do fluxo assíncrono.
 - PostgreSQL compartilhado: permanece o acoplamento ao schema e à capacidade do banco; separar processos não elimina disputa por conexões, CPU ou I/O no banco.
-- Escala do consumo limitada pelo número de partições, pelos recursos do banco e pelo tamanho dos lotes. O paralelismo é entre lotes; a atomicidade de cada lote permanece obrigatória.
+- Escala do consumo limitada pelo número de partições, pelos recursos do banco e pelo tamanho dos lotes. O paralelismo passa a incluir títulos do mesmo lote; a atomicidade permanece obrigatória por título, com contenção possível na atualização dos agregados.
 - Motores próprios no engine e no worker exigem golden cases, casos de borda e compatibilidade de versões para prevenir divergências. Não haverá biblioteca de aplicação compartilhada.
 
 O desafio penaliza complexidade sem justificativa. Esta escolha assume conscientemente custo adicional e não representa evidência de ganho de desempenho já medido. Antes de afirmar benefício, verificar latência HTTP sob carga de liquidação, tempo de processamento, espera em fila e saturação do banco ao variar a quantidade de workers, respeitando os critérios da SPEC.
@@ -61,7 +61,7 @@ Removida a proibição de injeção por construtor. Injeção por construtor e p
 
 O teste de infraestrutura `scripts/infra-smoke-test.py` validou a inicialização reproduzível, o gateway HTTPS, a autenticação OIDC do realm de demonstração, os limites e erros HTTP, a persistência dos volumes e a ausência de credenciais nos logs. Os testes de backend cobrem readiness do Actuator e bloqueio do endpoint de ambiente; não comprovam regras financeiras.
 
-Continuam pendentes testes de golden cases financeiros, concorrência e recuperação da liquidação, rollback atômico, aprovação cambial, medições de carga do worker e diagramas ER/C4. As evidências devem ser associadas às decisões quando essas funcionalidades forem implementadas. A validação do Compose é local e não demonstra disponibilidade ou segurança de produção.
+Continuam pendentes testes de golden cases financeiros, concorrência e recuperação da liquidação, rollback isolado por título, reprocessamento seletivo auditado, aprovação cambial, medições de carga do worker e diagramas ER/C4. As evidências devem ser associadas às decisões quando essas funcionalidades forem implementadas. A validação do Compose é local e não demonstra disponibilidade ou segurança de produção.
 
 ## 5. Estado funcional atual
 
@@ -84,3 +84,15 @@ Os contratos detalhados de rotas, limites, respostas, cache e logs do gateway es
 Implementar primeiro as telas com mocks HTTP explícitos por domínio, preservando composição e identidade do wireframe com Material UI; depois integrar Keycloak e APIs reais. Isso permite validar interface e estados enquanto o backend ainda não possui operações de negócio. A alternativa de aguardar cada API adiaria a validação dos fluxos; o custo aceito é manter fixtures e contratos sincronizados com o futuro OpenAPI. Mocks não são fallback de produção nem evidência de integridade financeira.
 
 O responsável aprovou cadastro/edição de cedentes também pelo gestor. A matriz de autorização e os contratos ficam exclusivamente no anexo H da SPEC; dependências, estados das tasks e adaptações do protótipo ficam no [backlog do frontend](docs/FRONTEND_TASKS.md). Nesta etapa foram definidos contratos documentais, sem introduzir patterns, camadas executáveis, dependências ou endpoints.
+
+## 8. Liquidação independente e reprocessamento por título — 27/09/2026
+
+O responsável alterou a regra: falha de um título não desfaz as liquidações dos demais. O lote organiza cadastro, confirmação e acompanhamento; o título passa a ser a unidade de processamento financeiro e da mensagem Kafka. O contrato completo está nas seções 4/D/H.6 da SPEC e o modelo físico proposto em DATABASE.md.
+
+A alternativa de manter uma transação única por lote foi descartada porque impediria preservar sucessos parciais. Adotamos comandos por título, flag de erro derivada do estado, histórico de tentativas e reprocessamento explícito apenas de falhos. O custo é acompanhar progresso, erros e snapshots distintos por tentativa, atualizar projeções concorrentes e adaptar telas/mocks. Não é necessário introduzir Saga ou compensar títulos já liquidados, pois o negócio agora exige preservar esses resultados.
+
+O modelo separa dados imutáveis do título, estado operacional atual, tentativas e liquidações imutáveis. Consolida os antigos cabeçalho/itens de liquidação em resultado individual, evitando um cabeçalho financeiro que precisaria mudar após cada sucesso. Novos índices únicos e vínculos mantêm uma liquidação por título e rastreabilidade entre tentativa, condições, comando e auditoria. A outbox é criada no aceite dos títulos aptos, dispensando registros bloqueados no cadastro.
+
+Para esta entrega, permanece no máximo uma solicitação pendente por lote; os títulos nela são processados independentemente. O operador pode selecionar falhos para nova tentativa quando a solicitação terminar, com justificativa e novas condições. Essa escolha simplifica o controle de seleção sem reintroduzir atomicidade financeira do lote. Campos financeiros do título continuam imutáveis e cadastro/importação continuam integrais.
+
+Esta revisão altera documentação, não código, migrations, tópicos, mocks ou telas. A infraestrutura ainda referencia `credit-lot`/`credit-lot.dlq` em `infra/kafka/create-topics.sh` e `scripts/infra-smoke-test.py`; esses arquivos não foram alterados nesta revisão documental. A implementação deverá provisionar os novos tópicos, ajustar produtor/consumer, persistência e UI antes da homologação. As evidências de frontend anteriores não comprovam o novo fluxo.
