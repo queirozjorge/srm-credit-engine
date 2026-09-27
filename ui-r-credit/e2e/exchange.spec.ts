@@ -1,10 +1,11 @@
-import { test } from './demoTest';
+import { test } from './isolatedTest';
 import { expect } from '@playwright/test';
-import { locale, translations } from '../src/i18n/pt-BR';
+import { locale, translations } from '../tests/pt-BR';
 const text = translations[locale]; const copy = text.exchange;
 const id = '00000000-0000-4000-8000-000000000002';
 test('operador propõe com incremento e retorna ao lote para simular sem liquidar', async ({ page }, info) => {
   await page.goto(`/lotes/${id}`); await page.getByRole('button', { name: text.demo.operator, exact: true }).click();
+  await page.getByRole('tab', { name: text.batch.detailTabs.requests }).click();
   await page.getByRole('link', { name: text.pricing.goExchange, exact: true }).click();
   await expect(page).toHaveURL(new RegExp(`cambio\\?lote=${id}`));
   await expect(page.getByRole('table', { name: copy.proposals })).toBeVisible();

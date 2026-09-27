@@ -26,7 +26,7 @@ export function useBatchList(filters: ReturnType<typeof batchFilters>, enabled: 
     } });
 }
 const receivablePage = pageOf(receivableSchema);
-export function useBatchDetail(id: string, filters: ReturnType<typeof pagination>) {
+export function useBatchDetail(id: string, filters: ReturnType<typeof pagination>, itemsVisible = true) {
   const api = useApiClient(); const { beginLoading } = useAppFeedback();
   const valid = uuid.safeParse(id).success;
   const detail = useQuery({ queryKey: ['batches', 'detail', id], enabled: valid,
@@ -37,7 +37,7 @@ export function useBatchDetail(id: string, filters: ReturnType<typeof pagination
       try { return (await api.request(`/api/batches/${id}`, { schema: batchDetailSchema, signal })).data; }
       finally { end(); }
     } });
-  const items = useQuery<z.infer<typeof receivablePage>>({ queryKey: ['batches', 'items', id, filters], enabled: valid && Boolean(detail.data) && !detail.isError,
+  const items = useQuery<z.infer<typeof receivablePage>>({ queryKey: ['batches', 'items', id, filters], enabled: itemsVisible && valid && Boolean(detail.data) && !detail.isError,
     placeholderData: (previous, query) => query?.queryKey[2] === id ? previous : undefined,
     queryFn: async ({ signal }) => {
       // Deixa o ciclo de montagem cancelar a consulta antes de abrir a conexão.

@@ -1,6 +1,6 @@
-import { test } from './demoTest';
+import { test } from './isolatedTest';
 import { expect } from '@playwright/test';
-import { locale, translations } from '../src/i18n/pt-BR';
+import { locale, translations } from '../tests/pt-BR';
 const text = translations[locale]; const dash = text.dashboard; const statement = text.settlement.statement;
 test('dashboard agrega uma vez por período e troca moeda sem consultas extras', async ({ page }, info) => {
   const requests: string[] = []; page.on('request', request => { if (request.url().includes('/api/')) requests.push(new URL(request.url()).pathname); });

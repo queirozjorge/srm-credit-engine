@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { locale, translations } from '../src/i18n/pt-BR';
+import { locale, translations } from '../tests/pt-BR';
 
 const text = translations[locale].common;
 test.beforeEach(async ({ page }) => { await page.goto('/e2e/fixtures/components.html'); });

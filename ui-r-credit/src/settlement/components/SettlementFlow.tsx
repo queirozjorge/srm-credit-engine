@@ -17,15 +17,15 @@ export function SettlementFlow({ batch, available, active = true, receivablesVis
   const location = useLocation();
   const text = translations[locale].settlement.flow; const { identity } = useSession(); const operation = useSettlement(batch);
   const updating = useSettlementPolling(batch.activeRequest, receivablesVisible);
-  const [confirmation, setConfirmation] = useState<Simulation | null>(null); const [open, setOpen] = useState(false);
+  const [confirmation, setConfirmation] = useState<{ simulation: Simulation | null } | null>(null); const [open, setOpen] = useState(false);
   const allowed = available && can(identity, 'settle') && batch.status === 'READY';
-  function confirm(simulation: Simulation | null) { if (!simulation || confirmation || !allowed) return; setConfirmation(simulation); setOpen(true); }
+  function confirm(simulation: Simulation | null) { if (confirmation || !allowed) return; setConfirmation({ simulation }); setOpen(true); }
   return <Stack spacing={2.5} sx={{ minWidth: 0 }}>
-    {batch.activeRequest && <AcceptedRequest request={batch.activeRequest} />}
-    {batch.activeRequest && <RequestHistory batchUuid={batch.uuid} />}
+    {batch.activeRequest && <AcceptedRequest request={batch.activeRequest} active={active} />}
+    {batch.activeRequest && <RequestHistory batchUuid={batch.uuid} active={active} />}
     {updating && <Typography role="status" variant="caption">{text.updating}</Typography>}
     {can(identity, 'simulate') && <Box sx={{ display: batch.status === 'READY' ? 'block' : 'none' }}><SimulationPanel autoStart={active && (location.state as { simulate?: boolean } | null)?.simulate === true} expectedCount={batch.itemCount} scope={`${batch.uuid}:${batch.status}:${batch.activeRequest?.uuid ?? ""}`} input={{ batchUuid: batch.uuid }} enabled={active && allowed && !operation.pending && !operation.uncertain}
-      action={simulation => <Button variant="contained" disabled={!simulation || !allowed || operation.pending || operation.uncertain} onClick={() => confirm(simulation)}>
+      action={simulation => <Button variant="contained" disabled={!allowed || operation.pending || operation.uncertain} onClick={() => confirm(simulation)}>
         {text.requestAction}</Button>} /></Box>}
     {operation.uncertain && <Stack direction="row" useFlexGap flexWrap="wrap" gap={1}>
       <Button disabled={operation.pending} onClick={() => { void operation.reconcile(); }}>{text.reconcile}</Button>
@@ -35,7 +35,7 @@ export function SettlementFlow({ batch, available, active = true, receivablesVis
       closeLabel={text.cancel} closeVariant="text" actions={<Button variant="contained" disabled={!open || operation.pending || !allowed || operation.uncertain}
         onClick={() => { void operation.submit().then(accepted => { if (accepted) setOpen(false); }); }}>{text.confirm}</Button>}>
       <Stack spacing={2} sx={{ py: 1 }}><Typography sx={{ overflowWrap: 'anywhere' }}>{text.scope(batch.uuid, batch.itemCount)}</Typography>
-        <Typography>{text.consequence}</Typography><FinancialTotals values={confirmation.totals} />
+        <Typography>{text.consequence}</Typography>{confirmation.simulation && <FinancialTotals values={confirmation.simulation.totals} />}
       </Stack>
     </AppDialog>}
   </Stack>;

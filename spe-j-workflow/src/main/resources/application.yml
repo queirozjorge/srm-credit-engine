@@ -1,6 +1,14 @@
 spring:
   application:
     name: spe-j-workflow
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/srm_credit}
+    username: ${WORKFLOW_DB_USER:srm_workflow}
+    password: ${WORKFLOW_DB_PASSWORD:}
+    hikari:
+      connection-init-sql: SET TIME ZONE 'UTC'
+  flyway:
+    enabled: false
   kafka:
     bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
     consumer:
@@ -39,3 +47,8 @@ springdoc:
     operations-sorter: alpha
     tags-sorter: alpha
     persist-authorization: false
+
+workflow:
+  schema:
+    expected-version: "3"
+    check-enabled: true

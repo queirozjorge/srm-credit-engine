@@ -3,8 +3,8 @@ import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router';
 import type { PropsWithChildren } from 'react';
-import { requestFixture } from '../mocks/fixtures';
-import { batchFixture, receivableFixture } from '../../batch/mocks/fixtures';
+import { requestFixture } from '../../../tests/settlement/mocks/fixtures';
+import { batchFixture, receivableFixture } from '../../../tests/batch/mocks/fixtures';
 import type { BatchDetail } from '../../batch/services/contracts';
 import { useSettlementPolling } from './useSettlementPolling';
 
@@ -136,4 +136,25 @@ test('suspende polling quando a sessão deixa de estar válida', async () => {
   mocks.session.expired = true; rerender();
   await act(() => vi.advanceTimersByTimeAsync(20000)); expect(mocks.request).toHaveBeenCalledTimes(1);
   unmount(); cache.clear();
+});
+
+test('atualiza somente a página de tentativas aberta quando progresso muda', async () => {
+  const { QueryObserver } = await import('@tanstack/react-query');
+  vi.useFakeTimers(); vi.spyOn(document, 'hidden', 'get').mockReturnValue(false);
+  const cache = makeCache();
+  const key = ['settlement', 'items', requestFixture.uuid, { page: 2, size: 5 }];
+  const page = { items: [], page: 2, size: 5, totalItems: 0, totalPages: 0 };
+  cache.setQueryData(key, page);
+  const observer = new QueryObserver(cache, { queryKey: key, queryFn: async () => page, staleTime: Infinity });
+  const unsubscribe = observer.subscribe(() => undefined);
+  mocks.request.mockImplementation((path: string) => path.endsWith('/items')
+    ? Promise.resolve({ data: page }) : Promise.resolve({ data: { ...pendingBatch, progressVersion: '3' } }));
+  const { unmount } = renderHook(() => useSettlementPolling(requestFixture, false), {
+    wrapper: wrapperFor(cache, `/lotes/${batchFixture.uuid}?tab=requests`),
+  });
+  await act(() => vi.advanceTimersByTimeAsync(5000));
+  expect(mocks.request).toHaveBeenCalledTimes(2);
+  expect(mocks.request).toHaveBeenNthCalledWith(2, `/api/settlement-requests/${requestFixture.uuid}/items`,
+    expect.objectContaining({ query: { page: 2, size: 5 }, notify: false }));
+  unsubscribe(); unmount(); cache.clear();
 });

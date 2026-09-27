@@ -5,13 +5,13 @@ import { MemoryRouter } from 'react-router';
 import type { PropsWithChildren } from 'react';
 import { AppProviders } from '../../app/AppProviders';
 import { createSession } from '../../auth/services/session';
-import { demoProfiles } from '../../auth/mocks/profiles';
-import { server } from '../../common/testing/server';
-import { batchFixture } from '../../batch/mocks/fixtures';
-import { requestFixture } from '../mocks/fixtures';
+import { demoProfiles } from '../../../tests/auth/mocks/profiles';
+import { server } from '../../../tests/common/testing/server';
+import { batchFixture } from '../../../tests/batch/mocks/fixtures';
+import { requestFixture } from '../../../tests/settlement/mocks/fixtures';
 import { useSettlement } from './useSettlement';
 function wrapper({ children }: PropsWithChildren) {
-  const session = createSession(); session.signIn(demoProfiles.operator);
+  const session = createSession(); session.signIn(demoProfiles.operator, demoProfiles.operator.subject);
   return <MemoryRouter><AppProviders session={session}>{children}</AppProviders></MemoryRouter>;
 }
 test('bloqueia duplo envio; POST sem body; após rede consulta antes de repetir a mesma chave', async () => {
@@ -43,4 +43,22 @@ test('falha definitiva não permite reenviar o lote inteiro', async () => {
   const { result } = renderHook(() => useSettlement(batchFixture), { wrapper });
   await act(() => result.current.submit()); expect(keys).toHaveLength(1);
   await act(() => result.current.submit()); expect(keys).toHaveLength(1);
+});
+
+test('422 persistido consulta detalhe uma vez e impede novo aceite inicial', async () => {
+  let posts = 0; let reads = 0;
+  const persisted = { ...requestFixture, status: 'FAILED', completedAt: requestFixture.acceptedAt,
+    counts: { ready: 0, pending: 0, settled: 0, failed: 1 } };
+  server.use(http.post('/api/batches/:id/settlements', () => {
+    posts++;
+    return HttpResponse.json({ code: 'NENHUM_TITULO_APTO', message: 'Nenhum título apto.',
+      context: { batchUuid: batchFixture.uuid, requestUuid: persisted.uuid, statusUrl: persisted.statusUrl } }, { status: 422 });
+  }), http.get('/api/batches/:id', () => {
+    reads++;
+    return HttpResponse.json({ ...batchFixture, status: 'FAILED', counts: persisted.counts, activeRequest: persisted, progressVersion: '1' });
+  }));
+  const { result } = renderHook(() => useSettlement(batchFixture), { wrapper });
+  await act(() => result.current.submit());
+  await act(() => result.current.submit());
+  expect(posts).toBe(1); expect(reads).toBe(1); expect(result.current.uncertain).toBe(false);
 });

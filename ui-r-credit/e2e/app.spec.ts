@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { locale, translations } from '../src/i18n/pt-BR';
+import { locale, translations } from '../tests/pt-BR';
 
 test('abre o build de produção sem erros ou transbordamento horizontal', async ({ page }, info) => {
   const errors: string[] = [];

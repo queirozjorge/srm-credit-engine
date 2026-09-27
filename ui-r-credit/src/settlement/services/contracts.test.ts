@@ -1,10 +1,10 @@
 import { expect, test } from 'vitest';
-import { requestFixture } from '../mocks/fixtures';
-import { receivableFixture } from '../../batch/mocks/fixtures';
+import { requestFixture } from '../../../tests/settlement/mocks/fixtures';
+import { receivableFixture } from '../../../tests/batch/mocks/fixtures';
 import { requestItemSchema, requestSchema } from './contracts';
 import { receivableProcessingSchema } from '../../batch/services/receivableContracts';
 import { simulationInputSchema } from '../../pricing/services/contracts';
-import { demoUuid } from '../../common/testing/demo';
+import { demoUuid } from '../../../tests/common/testing/demo';
 
 const completedAt = '2026-09-27T12:00:00Z';
 const result = {

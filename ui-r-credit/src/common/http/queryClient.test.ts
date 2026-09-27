@@ -1,7 +1,7 @@
 import { focusManager, onlineManager, QueryObserver } from '@tanstack/react-query';
 import { http, HttpResponse } from 'msw';
 import { afterEach, expect, test, vi } from 'vitest';
-import { server } from '../testing/server';
+import { server } from '../../../tests/common/testing/server';
 import { createQueryClient } from './queryClient';
 
 const clients: ReturnType<typeof createQueryClient>[] = [];

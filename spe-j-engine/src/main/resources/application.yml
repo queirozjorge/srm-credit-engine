@@ -1,6 +1,39 @@
 spring:
   application:
     name: spe-j-engine
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/srm_credit}
+    username: ${ENGINE_DB_USER:srm_engine}
+    password: ${ENGINE_DB_PASSWORD:}
+    hikari:
+      connection-init-sql: SET TIME ZONE 'UTC'
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate.jdbc.time_zone: UTC
+  flyway:
+    enabled: false
+  servlet:
+    multipart:
+      max-file-size: 5MB
+      max-request-size: 6MB
+  jackson:
+    deserialization:
+      fail-on-unknown-properties: true
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    producer:
+      acks: all
+      retries: 2147483647
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+      properties:
+        enable.idempotence: true
+        max.in.flight.requests.per.connection: 5
+        delivery.timeout.ms: 30000
+        request.timeout.ms: 10000
 
 server:
   port: ${SERVER_PORT:8080}
@@ -12,7 +45,7 @@ management:
   endpoints:
     web:
       exposure:
-        include: health
+        include: health,metrics
   endpoint:
     health:
       show-components: never
@@ -32,3 +65,19 @@ springdoc:
     operations-sorter: alpha
     tags-sorter: alpha
     persist-authorization: false
+
+engine:
+  security:
+    issuer-uri: ${KEYCLOAK_ISSUER_URI:https://localhost:8443/auth/realms/srm-credit}
+    jwk-set-uri: ${KEYCLOAK_JWK_SET_URI:http://localhost:8080/auth/realms/srm-credit/protocol/openid-connect/certs}
+    audience: ${KEYCLOAK_AUDIENCE:spe-j-engine}
+  outbox:
+    enabled: ${OUTBOX_ENABLED:true}
+    delay-ms: ${OUTBOX_DELAY_MS:1000}
+    claim-seconds: 60
+    retry-seconds: 5
+
+logging:
+  structured:
+    format:
+      console: ecs

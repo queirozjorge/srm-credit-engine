@@ -1,20 +1,19 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
-import { expect, test, vi } from 'vitest';
+import { expect, test } from 'vitest';
 import type { PropsWithChildren } from 'react';
 import { MemoryRouter } from 'react-router';
 import { http, HttpResponse, delay } from 'msw';
 import { AppProviders } from '../../app/AppProviders';
-import { server } from '../../common/testing/server';
+import { server } from '../../../tests/common/testing/server';
 import { createSession } from '../../auth/services/session';
-import { demoProfiles } from '../../auth/mocks/profiles';
+import { demoProfiles } from '../../../tests/auth/mocks/profiles';
 import { inputOf } from './manualBatch';
 import { previewSchema } from './contracts';
-import { receivableFixture } from '../mocks/fixtures';
+import { receivableFixture } from '../../../tests/batch/mocks/fixtures';
 import { importBody, maxImportBytes, validPreview, type ImportFormat } from './importBatch';
 import { useImportPreview } from './useImportPreview';
-vi.mock('../../app/config', () => ({ demoMode: true }));
 function wrapper({ children }: PropsWithChildren) {
-  const session = createSession(); session.signIn(demoProfiles.operator);
+  const session = createSession(); session.signIn(demoProfiles.operator, demoProfiles.operator.subject);
   return <MemoryRouter><AppProviders session={session}>{children}</AppProviders></MemoryRouter>;
 }
 const preview = { source: 'CSV' as const, itemCount: 1, faceValueBrl: '1000.00', items: [{ ...inputOf(receivableFixture), assignorName: receivableFixture.assignorName, itemIndex: 0, line: 2 }] };

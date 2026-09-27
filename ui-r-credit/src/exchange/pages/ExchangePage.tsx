@@ -29,7 +29,7 @@ export function ExchangePage() {
         {can(identity, 'propose') && <Button variant="contained" onClick={() => show(null)}>{text.propose}</Button>}
       </Stack>
     </Stack>
-    {source && <Button component={Link} to={`/lotes/${source}`} state={can(identity, 'simulate') ? { simulate: true } : undefined} sx={{ alignSelf: 'flex-start' }}>{can(identity, 'simulate') ? text.backSimulate : text.back}</Button>}
+    {source && <Button component={Link} to={`/lotes/${source}${can(identity, 'simulate') ? '?tab=requests' : ''}`} state={can(identity, 'simulate') ? { simulate: true } : undefined} sx={{ alignSelf: 'flex-start' }}>{can(identity, 'simulate') ? text.backSimulate : text.back}</Button>}
     <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' }, gap: 2 }}>
       <Paper variant="outlined" sx={{ p: 2.5, minWidth: 0, overflowWrap: 'anywhere' }}><Stack spacing={1.5}>
         <Typography component="h2" variant="h2">{text.current}</Typography>

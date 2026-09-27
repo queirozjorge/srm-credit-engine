@@ -1,6 +1,6 @@
-import { test } from './demoTest';
+import { test } from './isolatedTest';
 import { expect, type Page } from '@playwright/test';
-import { translations, locale } from '../src/i18n/pt-BR';
+import { translations, locale } from '../tests/pt-BR';
 const text = translations[locale]; const copy = text.batch.manual;
 async function enter(page: Page) {
   await page.goto('/lotes/novo');
@@ -37,7 +37,7 @@ test('cadastro revisado envia uma vez, preserva dados e gera lote READY', async 
   await expect(page.getByRole('dialog')).toHaveCount(0);
   await page.getByRole('link', { name: text.batch.view, exact: true }).click();
   await expect(page.getByRole('table', { name: text.batch.receivables })).toContainText('000123');
-  await expect(page.getByText(text.batch.statuses.READY, { exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: text.batch.summary, exact: true }).locator('..').getByText(text.batch.statuses.READY, { exact: true })).toBeVisible();
   expect(requests.filter(req => req.method === 'POST')).toHaveLength(1);
   expect(requests.some(req => /settlement|simulation/.test(req.path))).toBe(false);
 });

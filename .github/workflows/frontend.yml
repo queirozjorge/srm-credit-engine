@@ -31,13 +31,14 @@ jobs:
       - run: npm run lint
       - run: npm test
       - run: npm run build
+      - run: npm run test:bundle
   browser:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
-        suite: ['test:e2e', 'test:e2e:demo', 'test:e2e:components']
+        suite: ['test:e2e', 'test:e2e:isolated', 'test:e2e:components']
     defaults:
       run:
         working-directory: ui-r-credit

@@ -8,6 +8,7 @@ RUN npm ci
 COPY index.html *.config.ts tsconfig*.json eslint.config.js ./
 COPY src/ src/
 COPY e2e/ e2e/
+COPY tests/ tests/
 RUN npm run build
 
 FROM nginx:1.30.5-alpine3.24

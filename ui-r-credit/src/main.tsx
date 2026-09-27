@@ -1,3 +1,4 @@
+import { retireLegacyWorker } from './app/retireLegacyWorker';
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { BrowserRouter } from 'react-router';
@@ -10,8 +11,11 @@ if (!root) {
   throw new Error('Elemento raiz da aplicação não encontrado.');
 }
 
-createRoot(root).render(
+// Cleanup failure must not prevent access to the real application.
+void retireLegacyWorker().catch(error => {
+  console.error('[startup]:[error]: LEGACY_WORKER_CLEANUP - Falha ao remover worker legado.', error);
+}).finally(() => createRoot(root).render(
   <StrictMode>
     <AppProviders><OidcBootstrap><BrowserRouter><App /></BrowserRouter></OidcBootstrap></AppProviders>
   </StrictMode>,
-);
+));
