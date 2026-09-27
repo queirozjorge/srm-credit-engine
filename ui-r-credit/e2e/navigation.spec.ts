@@ -1,6 +1,6 @@
-import { test } from './demoTest';
+import { test } from './isolatedTest';
 import { expect, type Page } from '@playwright/test';
-import { locale, translations } from '../src/i18n/pt-BR';
+import { locale, translations } from '../tests/pt-BR';
 
 const text = translations[locale];
 

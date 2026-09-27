@@ -60,16 +60,6 @@ export const translations = {
       invalidResponse: 'O serviço retornou uma resposta inesperada. Tente novamente mais tarde.',
       status: (status: number) => ({ 400: 'Revise os dados informados.', 401: 'Sua sessão expirou. Acesse novamente.', 403: 'Você não tem permissão para esta operação.', 404: 'O recurso solicitado não foi encontrado.', 409: 'Os dados foram alterados. Consulte a versão atual antes de continuar.', 413: 'O arquivo excede o tamanho permitido.', 422: 'Não foi possível validar os dados informados.', 429: 'Muitas solicitações. Aguarde antes de tentar novamente.', 500: 'Não foi possível concluir a operação.', 502: 'O serviço está temporariamente indisponível.', 503: 'O serviço está temporariamente indisponível.', 504: 'O serviço demorou para responder.' } as Record<number, string>)[status] ?? 'Não foi possível concluir a operação.',
     },
-    demo: {
-      startupError: 'Não foi possível iniciar a demonstração. Tente novamente.', retry: 'Tentar novamente',
-      label: 'Demonstração · dados fictícios', description: 'Escolha um perfil para explorar a demonstração. Nenhuma operação financeira real será realizada.',
-      operator: 'Entrar como operador', manager: 'Entrar como gestor', combined: 'Entrar com ambos os perfis',
-      signOut: 'Sair', unavailable: 'O acesso real estará disponível após a integração com o provedor de identidade.',
-      assignor: 'Cedente Exemplo Ltda.', reference: 'DEMO-001', justification: 'Proposta demonstrativa.',
-      invalid: 'Revise os dados da solicitação.', missing: 'O recurso não foi encontrado.', denied: 'Você não tem permissão para esta operação.',
-      session: 'Acesse um perfil da demonstração.', duplicate: 'Este documento já está cadastrado.', conflict: 'Os dados foram alterados. Atualize a consulta.',
-      unsupported: 'Este cenário demonstrativo será disponibilizado com o fluxo correspondente.',
-    },
     dashboard: {
       eyebrow: 'Visão geral',
       title: 'Dashboard',
@@ -101,9 +91,9 @@ export const translations = {
         truncated: 'Foram exibidos até 1.000 problemas. Existem outras ocorrências no arquivo.',
         table: 'Prévia do arquivo', line: 'Linha', noPreview: 'Não há linhas válidas disponíveis para revisão.', currencyFor: (line: number) => `Moeda da linha ${line}`,
         summary: (count: number, total: string) => `${count} ${count === 1 ? 'recebível' : 'recebíveis'} · Valor de face: R$ ${total}`,
-        confirm: 'Confirmar importação integral', demoHint: 'Nesta demonstração, use os exemplos abaixo. Arquivos próprios dependem do serviço de importação real.',
-        sample: 'Usar exemplo válido', invalidSample: 'Usar exemplo com problemas', demoUnsupported: 'Arquivo não reconhecido nesta demonstração. Use um dos exemplos disponíveis.',
-        demoInvalid: 'Revise os problemas do arquivo antes de importar.', demoField: 'A referência externa está ausente.',
+        confirm: 'Confirmar importação integral',
+        downloadSample: (format: string) => `Baixar exemplo ${format}`,
+        sampleRequirements: 'Os exemplos usam o CNPJ 11.222.333/0001-81 e vencimento em 31/12/2030. Cadastre esse cedente antes da prévia e ajuste os dados antes de importar. Referências já cadastradas não podem ser repetidas.',
       },
       manual: {
         enter: 'Recebíveis', review: 'Revisar lote', done: 'Cadastro concluído', addItem: 'Adicionar recebível', editItem: 'Editar recebível',
@@ -198,7 +188,7 @@ export const translations = {
     },
     financial: { totals: { faceValueBrl: 'Valor de face (R$)', presentValueBrl: 'Valor presente (R$)', discountBrl: 'Deságio (R$)', paymentBrl: 'Pagamento em BRL (R$)', paymentUsd: 'Pagamento em USD (US$)' } },
     pricing: {
-      demoHint: 'Demonstração disponível para uma duplicata de R$ 1.000,00, em reais, com vencimento em 26/09/2026. Outros cenários dependem do cálculo real.', title: 'Simulação indicativa', refresh: 'Simular novamente', indicative: 'Valores indicativos. Após ativar, edições válidas atualizam a simulação; condições finais são fixadas somente no aceite da liquidação.',
+      title: 'Simulação indicativa', refresh: 'Simular novamente', indicative: 'Valores indicativos. Após ativar, edições válidas atualizam a simulação; condições finais são fixadas somente no aceite da liquidação.',
       updating: 'Atualizando simulação…', current: 'Simulação atual', stale: 'Simulação desatualizada', items: 'Valores indicativos por recebível', item: 'Item', days: 'Prazo em dias', termMonths: 'Prazo em meses', spread: 'Spread mensal', present: 'Valor presente', payment: 'Pagamento', goExchange: 'Consultar câmbio',
       calculated: (instant: string, date: string, rate: string) => `Calculada em ${instant} · Data-base: ${date} · Taxa mensal: ${rate}`,
       exchange: (rate: string, until: string) => `Câmbio: R$ ${rate} por US$ 1 · Válido até ${until}`,
@@ -224,7 +214,7 @@ export const translations = {
       },
       flow: {
         identifier: 'Solicitação', history: 'Histórico de solicitações', requestAction: 'Solicitar liquidação', retry: 'Reprocessar títulos falhos', confirmTitle: 'Confirmar solicitação de liquidação', confirm: 'Confirmar solicitação', cancel: 'Voltar à revisão',
-        scope: (id: string, count: number) => `Lote ${id} · ${count} ${count === 1 ? 'recebível' : 'recebíveis'}.`, consequence: 'Cada título será processado individualmente. Uma falha não desfaz os títulos já liquidados; os títulos falhos podem ser reprocessados com novas condições.',
+        scope: (id: string, count: number) => `Lote ${id} · ${count} ${count === 1 ? 'recebível' : 'recebíveis'}.`, consequence: 'O aceite valida cada título: itens inválidos serão sinalizados e somente os aptos seguirão para processamento. Uma falha não desfaz os títulos já liquidados; títulos falhos podem ser reprocessados com novas condições.',
         uncertain: 'Não foi possível confirmar o aceite. A chave desta solicitação foi preservada. Consulte a situação antes de repetir.', reconcile: 'Consultar situação da solicitação', repeat: 'Repetir com a mesma chave',
         accepted: 'Solicitação de liquidação', pending: 'Solicitação aceita. Acompanhando o processamento dos títulos.', updating: 'Atualizando andamento…', failure: 'Consultar motivo da falha', items: 'Consultar tentativas e resultados por recebível', noResult: 'Não disponível',
         requestCounts: (pending: number, settled: number, failed: number) => `${pending} pendentes · ${settled} liquidados · ${failed} com falha`,

@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest';
 import { financialToday, inputOf, totalFace, validateManual } from './manualBatch';
-import { receivableFixture } from '../mocks/fixtures';
+import { receivableFixture } from '../../../tests/batch/mocks/fixtures';
 const item = { ...receivableFixture, dueDate: '2099-12-31' };
 test('limites de quantidade, referência normalizada e duplicidade composta', () => {
   expect(validateManual([])).toBe('count');

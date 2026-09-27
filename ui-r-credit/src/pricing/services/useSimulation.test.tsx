@@ -5,14 +5,14 @@ import { MemoryRouter } from 'react-router';
 import type { PropsWithChildren } from 'react';
 import { AppProviders } from '../../app/AppProviders';
 import { createSession } from '../../auth/services/session';
-import { demoProfiles } from '../../auth/mocks/profiles';
-import { server } from '../../common/testing/server';
-import { simulationFixture } from '../mocks/fixtures';
-import { receivableFixture } from '../../batch/mocks/fixtures';
+import { demoProfiles } from '../../../tests/auth/mocks/profiles';
+import { server } from '../../../tests/common/testing/server';
+import { simulationFixture } from '../../../tests/pricing/mocks/fixtures';
+import { receivableFixture } from '../../../tests/batch/mocks/fixtures';
 import { inputOf } from '../../batch/services/manualBatch';
 import { useSimulation } from './useSimulation';
 function wrapper({ children }: PropsWithChildren) {
-  const session = createSession(); session.signIn(demoProfiles.operator);
+  const session = createSession(); session.signIn(demoProfiles.operator, demoProfiles.operator.subject);
   return <MemoryRouter><AppProviders session={session}>{children}</AppProviders></MemoryRouter>;
 }
 test('debounce agrupa edições e resposta antiga não substitui simulação atual; erro mantém dados desatualizados', async () => {

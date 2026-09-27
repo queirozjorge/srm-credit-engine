@@ -1,7 +1,7 @@
 import { expect, test } from 'vitest';
 import { money, rate, date, pageOf } from './contracts';
 import { requestSchema } from '../../settlement/services/contracts';
-import { requestFixture } from '../../settlement/mocks/fixtures';
+import { requestFixture } from '../../../tests/settlement/mocks/fixtures';
 import { simulationInputSchema } from '../../pricing/services/contracts';
 import { assignorSchema } from '../../register/services/contracts';
 test('decimais são strings limitadas e datas impossíveis são rejeitadas', () => {
@@ -23,4 +23,16 @@ test('solicitação pendente valida contagens sem estado financeiro parcial e ex
 test('contratos rejeitam entradas ambíguas e envelopes incoerentes', () => {
   expect(simulationInputSchema.safeParse({ batchUuid: requestFixture.batchUuid, items: [] }).success).toBe(false);
   expect(pageOf(assignorSchema).safeParse({ items: [], page: 1, size: 20, totalItems: 10, totalPages: 0 }).success).toBe(false);
+});
+
+test('taxa base aceita sinal sem permitir taxas cambiais ou spreads negativos', async () => {
+  const { signedRate } = await import('./contracts');
+  const { simulationSchema } = await import('../../pricing/services/contracts');
+  const { simulationFixture } = await import('../../../tests/pricing/mocks/fixtures');
+  expect(signedRate.safeParse('-0.012345678901').success).toBe(true);
+  expect(signedRate.safeParse('-0.0123456789012').success).toBe(false);
+  expect(rate.safeParse('-0.01').success).toBe(false);
+  expect(simulationSchema.safeParse({ ...simulationFixture, baseRate: '-0.01' }).success).toBe(true);
+  expect(requestSchema.safeParse({ ...requestFixture, snapshot: { ...requestFixture.snapshot, baseRate: '-0.01' } }).success).toBe(true);
+  expect(simulationSchema.safeParse({ ...simulationFixture, items: simulationFixture.items.map(item => ({ ...item, spread: '-0.01' })) }).success).toBe(false);
 });

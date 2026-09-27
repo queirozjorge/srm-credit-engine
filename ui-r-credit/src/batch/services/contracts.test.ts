@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest';
-import { batchFixture } from '../mocks/fixtures';
+import { batchFixture } from '../../../tests/batch/mocks/fixtures';
 import { batchSummarySchema } from './contracts';
 
 test('resumo exige contagens que expliquem o estado agregado do lote', () => {

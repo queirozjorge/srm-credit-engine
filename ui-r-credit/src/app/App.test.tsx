@@ -1,16 +1,15 @@
-import { server } from '../common/testing/server';
-import { createDemoHandlers } from './mocks/handlers';
-vi.mock('./config', () => ({ demoMode: true }));
+import { server } from '../../tests/common/testing/server';
+import { createDemoHandlers } from '../../tests/app/mocks/handlers';
 import { StrictMode } from 'react';
 import { render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
 import { beforeEach, expect, test, vi } from 'vitest';
-import { locale, translations } from '../i18n/pt-BR';
+import { locale, translations } from '../../tests/pt-BR';
 import { AppProviders } from './AppProviders';
 import { AppRoutes } from './routes/AppRoutes';
 import { createSession } from '../auth/services/session';
-import { demoProfiles } from '../auth/mocks/profiles';
-function App() { const session = createSession(); session.signIn(demoProfiles.operator); return <AppProviders session={session}><AppRoutes /></AppProviders>; }
+import { demoProfiles } from '../../tests/auth/mocks/profiles';
+function App() { const session = createSession(); session.signIn(demoProfiles.operator, demoProfiles.operator.subject); return <AppProviders session={session}><AppRoutes /></AppProviders>; }
 
 beforeEach(() => { server.use(...createDemoHandlers()); vi.spyOn(window, 'scrollTo').mockImplementation(() => undefined); });
 

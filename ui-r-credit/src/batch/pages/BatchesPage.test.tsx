@@ -6,27 +6,26 @@ import { http, HttpResponse } from 'msw';
 import { AppProviders } from '../../app/AppProviders';
 import { AppRoutes } from '../../app/routes/AppRoutes';
 import { createSession } from '../../auth/services/session';
-import { demoProfiles } from '../../auth/mocks/profiles';
-import { server } from '../../common/testing/server';
-import { createDemoHandlers } from '../../app/mocks/handlers';
-import { demoTime, demoUuid, failure } from '../../common/testing/demo';
-import { batchFixture, receivableFixture } from '../mocks/fixtures';
+import { demoProfiles } from '../../../tests/auth/mocks/profiles';
+import { server } from '../../../tests/common/testing/server';
+import { createDemoHandlers } from '../../../tests/app/mocks/handlers';
+import { demoTime, demoUuid, failure } from '../../../tests/common/testing/demo';
+import { batchFixture, receivableFixture } from '../../../tests/batch/mocks/fixtures';
 import { batchDetailSchema } from '../services/contracts';
-import { createBatchHandlers, type Scenario } from '../mocks/handlers';
-import { requestFixture } from '../../settlement/mocks/fixtures';
+import { createBatchHandlers, type Scenario } from '../../../tests/batch/mocks/handlers';
+import { requestFixture } from '../../../tests/settlement/mocks/fixtures';
 import { requestSchema } from '../../settlement/services/contracts';
 import { reprocessRequestSchema } from '../../settlement/services/reprocessContracts';
 import { simulationInputSchema } from '../../pricing/services/contracts';
-import { simulationFixture } from '../../pricing/mocks/fixtures';
-import { locale, translations } from '../../i18n/pt-BR';
-vi.mock('../../app/config', () => ({ demoMode: true }));
+import { simulationFixture } from '../../../tests/pricing/mocks/fixtures';
+import { locale, translations } from '../../../tests/pt-BR';
 const text = translations[locale]; const copy = text.batch;
 beforeEach(() => {
   vi.spyOn(window, 'scrollTo').mockImplementation(() => undefined);
   server.use(...createDemoHandlers());
 });
 function open(path = '/lotes', manager = false) {
-  const session = createSession(); session.signIn(manager ? demoProfiles.manager : demoProfiles.operator);
+  const session = createSession(); const profile = manager ? demoProfiles.manager : demoProfiles.operator; session.signIn(profile, profile.subject);
   return render(<MemoryRouter initialEntries={[path]}><AppProviders session={session}><AppRoutes /></AppProviders></MemoryRouter>);
 }
 

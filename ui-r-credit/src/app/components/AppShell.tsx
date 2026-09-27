@@ -5,7 +5,6 @@ import { locale, translations } from '../../i18n/pt-BR';
 import { NavigationLink } from '../routes/NavigationLink';
 import { useNavigationMemory } from '../routes/navigationMemory';
 import { useSession } from '../../auth/services/sessionContext';
-import { demoMode } from '../config';
 import { SignOutButton } from '../../auth/components/SignOutButton';
 import { Brand } from '../../common/components/Brand';
 
@@ -56,7 +55,7 @@ export function AppShell() {
         <Stack direction="row" alignItems="center" justifyContent="space-between" useFlexGap flexWrap="wrap" gap={2}>
           <Brand />
           <Stack direction="row" alignItems="center" useFlexGap flexWrap="wrap" gap={1}>
-            <Chip variant="outlined" size="small" label={demoMode ? text.demo.label : identity?.subject ?? text.app.session}  />
+            <Chip variant="outlined" size="small" label={identity?.subject ?? text.app.session}  />
             <Button ref={menuButton} variant="outlined" color="inherit" aria-controls="main-navigation"
               aria-expanded={open} aria-label={open ? text.app.closeMenu : text.app.openMenu}
               onClick={() => { if (open) closeMenu(); else setExpanded(true); }}

@@ -5,12 +5,12 @@ import { MemoryRouter } from 'react-router';
 import type { PropsWithChildren } from 'react';
 import { AppProviders } from '../../app/AppProviders';
 import { createSession } from '../../auth/services/session';
-import { demoProfiles } from '../../auth/mocks/profiles';
-import { server } from '../../common/testing/server';
-import { demoUuid } from '../../common/testing/demo';
+import { demoProfiles } from '../../../tests/auth/mocks/profiles';
+import { server } from '../../../tests/common/testing/server';
+import { demoUuid } from '../../../tests/common/testing/demo';
 import { batchDetailSchema } from '../../batch/services/contracts';
-import { batchFixture } from '../../batch/mocks/fixtures';
-import { requestFixture } from '../mocks/fixtures';
+import { batchFixture } from '../../../tests/batch/mocks/fixtures';
+import { requestFixture } from '../../../tests/settlement/mocks/fixtures';
 import { requestSchema } from './contracts';
 import { reprocessRequestSchema } from './reprocessContracts';
 import { useReprocessSettlement } from './useReprocessSettlement';
@@ -21,7 +21,7 @@ const failedBatch = batchDetailSchema.parse({ ...batchFixture, status: 'FAILED',
 
 function wrapperFor(profile: typeof demoProfiles.operator | typeof demoProfiles.manager = demoProfiles.operator) {
   const session = createSession();
-  session.signIn(profile);
+  session.signIn(profile, profile.subject);
   return function Wrapper({ children }: PropsWithChildren) {
     return <MemoryRouter><AppProviders session={session}>{children}</AppProviders></MemoryRouter>;
   };

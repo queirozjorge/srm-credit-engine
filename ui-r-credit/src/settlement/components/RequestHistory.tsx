@@ -11,12 +11,12 @@ import { requestSchema, type SettlementRequest } from '../services/contracts';
 import { AcceptedRequest } from './AcceptedRequest';
 import { locale, translations } from '../../i18n/pt-BR';
 const schema = pageOf(requestSchema);
-export function RequestHistory({ batchUuid }: { batchUuid: string }) {
+export function RequestHistory({ batchUuid, active = true }: { batchUuid: string; active?: boolean }) {
   const text = translations[locale]; const api = useApiClient(); const { beginLoading } = useAppFeedback();
   const reduced = useMediaQuery('(prefers-reduced-motion: reduce)');
   const [expanded, setExpanded] = useState(false); const [pagination, setPagination] = useState({ page: 1, size: 5 });
   const [selected, setSelected] = useState<SettlementRequest | null>(null); const [open, setOpen] = useState(false);
-  const rows = useQuery({ queryKey: ['settlement', 'history', batchUuid, pagination], enabled: expanded,
+  const rows = useQuery({ queryKey: ['settlement', 'history', batchUuid, pagination], enabled: expanded && active,
     queryFn: async ({ signal }) => { const end = beginLoading();
       try { return (await api.request(`/api/batches/${batchUuid}/settlements`, { schema, query: pagination, signal })).data; } finally { end(); }
     }, placeholderData: (old, query) => query?.queryKey[2] === batchUuid ? old : undefined });
@@ -32,7 +32,7 @@ export function RequestHistory({ batchUuid }: { batchUuid: string }) {
       ]} pagination={{ ...pagination, totalItems: rows.data.totalItems, disabled: rows.isFetching, onChange: setPagination }} />}
     </Collapse>
     {selected && <AppDialog open={open} title={text.settlement.flow.history} onClose={() => setOpen(false)} onExited={() => setSelected(null)} closeLabel={text.settlement.flow.cancel}>
-      <AcceptedRequest request={selected} />
+      <AcceptedRequest request={selected} active={active && open} />
     </AppDialog>}
   </Stack>;
 }

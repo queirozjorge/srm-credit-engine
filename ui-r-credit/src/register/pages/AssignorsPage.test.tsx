@@ -6,19 +6,18 @@ import { http, HttpResponse } from 'msw';
 import { AppProviders } from '../../app/AppProviders';
 import { AppRoutes } from '../../app/routes/AppRoutes';
 import { createSession } from '../../auth/services/session';
-import { demoProfiles } from '../../auth/mocks/profiles';
-import { server } from '../../common/testing/server';
-import { createDemoHandlers } from '../../app/mocks/handlers';
-import { assignorFixture } from '../mocks/fixtures';
-import { translations, locale } from '../../i18n/pt-BR';
-vi.mock('../../app/config', () => ({ demoMode: true }));
+import { demoProfiles } from '../../../tests/auth/mocks/profiles';
+import { server } from '../../../tests/common/testing/server';
+import { createDemoHandlers } from '../../../tests/app/mocks/handlers';
+import { assignorFixture } from '../../../tests/register/mocks/fixtures';
+import { translations, locale } from '../../../tests/pt-BR';
 const text = translations[locale]; const copy = text.register;
 beforeEach(() => {
   vi.spyOn(window, 'scrollTo').mockImplementation(() => undefined);
   server.use(...createDemoHandlers());
 });
 function open(path = '/cedentes') {
-  const session = createSession(); session.signIn(demoProfiles.operator);
+  const session = createSession(); session.signIn(demoProfiles.operator, demoProfiles.operator.subject);
   return render(<MemoryRouter initialEntries={[path]}><AppProviders session={session}><AppRoutes /></AppProviders></MemoryRouter>);
 }
 async function dismiss() {

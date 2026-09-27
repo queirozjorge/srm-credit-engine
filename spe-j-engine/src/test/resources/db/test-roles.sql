@@ -1,0 +1,5 @@
+CREATE ROLE srm_engine LOGIN PASSWORD 'test';
+CREATE ROLE srm_workflow LOGIN PASSWORD 'test';
+CREATE ROLE srm_migrator LOGIN PASSWORD 'test';
+REVOKE CREATE ON SCHEMA public FROM PUBLIC;
+GRANT USAGE, CREATE ON SCHEMA public TO srm_migrator;

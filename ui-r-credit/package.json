@@ -17,9 +17,10 @@
     "test:e2e": "playwright test",
     "test:e2e:components": "playwright test --config playwright.components.config.ts",
     "test:e2e:install": "playwright install chromium",
-    "dev:demo": "vite --mode demo",
-    "test:e2e:demo": "playwright test --config playwright.demo.config.ts",
-    "test:e2e:oidc": "playwright test --config playwright.oidc.config.ts"
+    "test:e2e:oidc": "playwright test --config playwright.oidc.config.ts",
+    "test:e2e:isolated": "playwright test --config playwright.isolated.config.ts",
+    "test:bundle": "node tests/checkBuild.mjs",
+    "test:e2e:integration": "playwright test --config playwright.integration.config.ts"
   },
   "dependencies": {
     "@emotion/react": "11.14.0",

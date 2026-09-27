@@ -1,21 +1,20 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { expect, test, vi } from 'vitest';
+import { expect, test } from 'vitest';
 import { http, HttpResponse } from 'msw';
 import { MemoryRouter } from 'react-router';
 import { AppProviders } from '../../app/AppProviders';
 import { createSession } from '../../auth/services/session';
-import { demoProfiles } from '../../auth/mocks/profiles';
-import { server } from '../../common/testing/server';
-import { createExchangeHandlers, createExchangeStore } from '../mocks/handlers';
+import { demoProfiles } from '../../../tests/auth/mocks/profiles';
+import { server } from '../../../tests/common/testing/server';
+import { createExchangeHandlers, createExchangeStore } from '../../../tests/exchange/mocks/handlers';
 import { ExchangePage } from './ExchangePage';
-import { locale, translations } from '../../i18n/pt-BR';
-vi.mock('../../app/config', () => ({ demoMode: true }));
+import { locale, translations } from '../../../tests/pt-BR';
 const text = translations[locale].exchange;
 test('referência indisponível e ausência de cotação não bloqueiam proposta manual; atualização não consulta provedor', async () => {
   const store = createExchangeStore(); store.quotes = []; let references = 0;
   server.use(http.get('/api/exchange/reference', () => { references++; return new HttpResponse(null, { status: 503 }); }), ...createExchangeHandlers(store));
-  const session = createSession(); session.signIn(demoProfiles.operator);
+  const session = createSession(); session.signIn(demoProfiles.operator, demoProfiles.operator.subject);
   render(<MemoryRouter><AppProviders session={session}><ExchangePage /></AppProviders></MemoryRouter>);
   await screen.findByText(text.quoteStatuses.ABSENT);
   const warning = await screen.findByRole('dialog'); await userEvent.click(screen.getByRole('button', { name: translations[locale].common.understood }));

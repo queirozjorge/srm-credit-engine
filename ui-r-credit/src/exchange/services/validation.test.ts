@@ -1,7 +1,7 @@
 import { expect, test } from 'vitest';
 import { addRate, exchangeFilters } from './validation';
-import { currentQuote } from '../mocks/handlers';
-import { quoteFixture } from '../mocks/fixtures';
+import { currentQuote } from '../../../tests/exchange/mocks/handlers';
+import { quoteFixture } from '../../../tests/exchange/mocks/fixtures';
 test('incremento exato sem ponto flutuante e sem exceder NUMERIC(24,12)', () => {
   expect(addRate('5.1', '0.000000000001')).toBe('5.100000000001');
   expect(addRate('999999999999.999999999998', '0.000000000001')).toBe('999999999999.999999999999');

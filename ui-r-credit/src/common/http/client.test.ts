@@ -1,11 +1,11 @@
 import { http, HttpResponse, delay } from 'msw';
 import { z } from 'zod';
 import { expect, test, vi } from 'vitest';
-import { server } from '../testing/server';
+import { server } from '../../../tests/common/testing/server';
 import { createApiClient } from './client';
-import { scenario } from '../testing/demo';
+import { scenario } from '../../../tests/common/testing/demo';
 import { createSession } from '../../auth/services/session';
-import { demoProfiles } from '../../auth/mocks/profiles';
+import { demoProfiles } from '../../../tests/auth/mocks/profiles';
 const schema = z.object({ value: z.string() });
 test('valida resposta, query e Bearer sem enviar credenciais em URL', async () => {
   server.use(http.get('/api/check', ({ request }) => {
@@ -35,11 +35,11 @@ test.each(['invalid', 'network'] as const)('falha %s nunca vira sucesso', async 
 });
 test('timeout, cancelamento e troca de identidade descartam respostas antigas', async () => {
   server.use(http.get('/api/check', async () => { await delay(80); return HttpResponse.json({ value: 'old' }); }));
-  const onError = vi.fn(); const session = createSession(); session.signIn(demoProfiles.operator);
+  const onError = vi.fn(); const session = createSession(); session.signIn(demoProfiles.operator, demoProfiles.operator.subject);
   const api = createApiClient({ sessionSignal: session.signal, onError });
   await expect(api.request('/api/check', { schema, timeoutMs: 5 })).rejects.toMatchObject({ code: 'TIMEOUT' });
   onError.mockClear(); const pending = api.request('/api/check', { schema });
-  session.signIn(demoProfiles.manager);
+  session.signIn(demoProfiles.manager, demoProfiles.manager.subject);
   await expect(pending).rejects.toMatchObject({ name: 'AbortError' }); expect(onError).not.toHaveBeenCalled();
   const controller = new AbortController(); controller.abort();
   await expect(api.request('/api/check', { schema, signal: controller.signal })).rejects.toMatchObject({ name: 'AbortError' });

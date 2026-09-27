@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest';
 import { can, canDecide, createSession } from './session';
-import { demoProfiles } from '../mocks/profiles';
+import { demoProfiles } from '../../../tests/auth/mocks/profiles';
 import { safeReturnTo } from './returnTo';
 test('matriz de permissões, acúmulo de papéis e proibição de autoaprovação', () => {
   expect(can(null, 'read')).toBe(false);
@@ -18,7 +18,7 @@ test('troca, saída e expiração apagam token e cancelam operações anteriores
   const session = createSession(); session.signIn(demoProfiles.operator, 'secret'); const signal = session.signal();
   session.signIn(demoProfiles.manager); expect(signal.aborted).toBe(true); expect(session.token()).toBeNull();
   session.expire(); expect(session.getSnapshot()).toEqual({ identity: null, expired: true });
-  session.signIn(demoProfiles.operator); session.signOut(); expect(session.getSnapshot()).toEqual({ identity: null, expired: false });
+  session.signIn(demoProfiles.operator, demoProfiles.operator.subject); session.signOut(); expect(session.getSnapshot()).toEqual({ identity: null, expired: false });
 });
 test('retorno preserva destino local e rejeita redirecionamento externo', () => {
   expect(safeReturnTo('/lotes?page=3')).toBe('/lotes?page=3');

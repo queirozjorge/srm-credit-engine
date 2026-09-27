@@ -5,13 +5,13 @@ import { MemoryRouter } from 'react-router';
 import type { PropsWithChildren } from 'react';
 import { AppProviders } from '../../app/AppProviders';
 import { createSession } from '../../auth/services/session';
-import { demoProfiles } from '../../auth/mocks/profiles';
-import { server } from '../../common/testing/server';
-import { batchFixture, receivableFixture } from '../mocks/fixtures';
+import { demoProfiles } from '../../../tests/auth/mocks/profiles';
+import { server } from '../../../tests/common/testing/server';
+import { batchFixture, receivableFixture } from '../../../tests/batch/mocks/fixtures';
 import { useCreateBatch } from './useCreateBatch';
 const item = { ...receivableFixture, localId: 'local', externalReference: ' 000001 ', dueDate: '2099-12-31' };
 function wrapper({ children }: PropsWithChildren) {
-  const session = createSession(); session.signIn(demoProfiles.operator);
+  const session = createSession(); session.signIn(demoProfiles.operator, demoProfiles.operator.subject);
   return <MemoryRouter><AppProviders session={session}>{children}</AppProviders></MemoryRouter>;
 }
 beforeEach(() => server.use(http.get('/api/batches/:id', () => HttpResponse.json(batchFixture))));

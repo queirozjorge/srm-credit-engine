@@ -1,16 +1,14 @@
 import { useEffect, useState, type PropsWithChildren } from 'react';
 import { AppLoader } from '../../common/components/AppLoader';
 import { useAppFeedback } from '../../common/components/feedbackContext';
-import { demoMode } from '../../app/config';
 import { useSession } from '../services/sessionContext';
 import type { Session } from '../services/session';
 import { locale, translations } from '../../i18n/pt-BR';
 const starts = new WeakMap<Session, Promise<void>>();
 export function OidcBootstrap({ children }: PropsWithChildren) {
   const { session } = useSession(); const { showWarning } = useAppFeedback();
-  const [ready, setReady] = useState(demoMode);
+  const [ready, setReady] = useState(false);
   useEffect(() => {
-    if (demoMode) return;
     let active = true;
     let start = starts.get(session);
     if (!start) { start = import('../services/oidc').then(({ createOidc }) => createOidc(session).initialize()); starts.set(session, start); }

@@ -8,6 +8,7 @@ export default defineConfig({
   retries: 0,
   reporter: [['list'], ['html', { open: 'never' }]],
   use: {
+    channel: process.env.PLAYWRIGHT_CHANNEL,
     baseURL: 'http://127.0.0.1:4175',
     locale: 'pt-BR',
     timezoneId: 'America/Los_Angeles',
