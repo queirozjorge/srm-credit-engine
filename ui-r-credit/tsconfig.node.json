@@ -14,5 +14,5 @@
     "noUnusedLocals": true,
     "noUnusedParameters": true
   },
-  "include": ["vite.config.ts", "src/i18n/pt-BR.ts"]
+  "include": ["*.config.ts", "src/i18n/pt-BR.ts"]
 }

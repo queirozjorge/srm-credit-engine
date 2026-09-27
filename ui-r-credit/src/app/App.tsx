@@ -1,13 +1,8 @@
-import CssBaseline from '@mui/material/CssBaseline';
-import { ThemeProvider } from '@mui/material/styles';
-import { theme } from '../common/styles/theme';
-import { HomePage } from '../home/pages/HomePage';
+import { RuntimeBootstrap } from './RuntimeBootstrap';
+import { AppRoutes } from './routes/AppRoutes';
 
 export function App() {
   return (
-    <ThemeProvider theme={theme}>
-      <CssBaseline />
-      <HomePage />
-    </ThemeProvider>
+      <RuntimeBootstrap><AppRoutes /></RuntimeBootstrap>
   );
 }

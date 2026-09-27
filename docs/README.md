@@ -2,6 +2,8 @@
 
 Protótipo navegável para revisar hierarquia, conteúdo e fluxos antes do desenvolvimento do frontend.
 
+O [mapa de telas e backlog do frontend](FRONTEND_TASKS.md) organiza a implementação em React/Material UI. Os [contratos propostos na SPEC](../SPEC.md#h-contratos-propostos-para-o-frontend-e-seus-mocks) orientam os mocks e a integração futura; ainda não há endpoints de negócio implementados. As adaptações documentadas no backlog prevalecem sobre comportamentos apenas demonstrativos deste protótipo.
+
 ## Abrir
 
 Abra [`index.html`](index.html) em um navegador. Não requer instalação, servidor ou conta de design.
