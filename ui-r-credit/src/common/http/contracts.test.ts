@@ -11,11 +11,14 @@ test('decimais são strings limitadas e datas impossíveis são rejeitadas', () 
   expect(rate.safeParse('0.1234567890123').success).toBe(false);
   expect(date.safeParse('2026-02-30').success).toBe(false);
 });
-test('solicitação pendente não pode expor resultado parcial e URL deve corresponder ao UUID', () => {
+test('solicitação pendente valida contagens sem estado financeiro parcial e exige URL vinculada', () => {
   expect(requestSchema.safeParse(requestFixture).success).toBe(true);
   expect(requestSchema.safeParse({ ...requestFixture, completedAt: '2026-09-26T12:00:00Z' }).success).toBe(false);
   expect(requestSchema.safeParse({ ...requestFixture, statusUrl: 'https://example.com' }).success).toBe(false);
   expect(requestSchema.safeParse({ ...requestFixture, status: 'SETTLED' }).success).toBe(false);
+  expect(requestSchema.safeParse({ ...requestFixture, status: 'PARTIALLY_SETTLED', completedAt: '2026-09-26T12:00:00Z', counts: { ready: 0, pending: 0, settled: 1, failed: 0 } }).success).toBe(false);
+  expect(requestSchema.safeParse({ ...requestFixture, kind: 'REPROCESS', reason: null }).success).toBe(false);
+  expect(requestSchema.safeParse({ ...requestFixture, counts: { ready: 1, pending: 0, settled: 0, failed: 0 } }).success).toBe(false);
 });
 test('contratos rejeitam entradas ambíguas e envelopes incoerentes', () => {
   expect(simulationInputSchema.safeParse({ batchUuid: requestFixture.batchUuid, items: [] }).success).toBe(false);

@@ -1,6 +1,6 @@
 # DATABASE — SRM Credit Engine
 
-**Status: modelo para implementação; migrations e aplicações ainda não existem.**
+**Modelo revisado em 27/09/2026: liquidação independente por título, erro e reprocessamento auditados. Migrations e persistência financeira ainda não implementadas.**
 
 Este documento detalha o modelo PostgreSQL exigido por [SPEC.md](SPEC.md) e [AGENTS.md](AGENTS.md). As regras abaixo são requisitos de implementação, não evidências de controles já executados. A SPEC permanece como fonte dos contratos funcionais.
 
@@ -14,6 +14,15 @@ Este documento detalha o modelo PostgreSQL exigido por [SPEC.md](SPEC.md) e [AGE
 - Dinheiro usa `NUMERIC(19,2)`; taxas e câmbio usam `NUMERIC(24,12)`. Rejeitar valores não finitos e overflow, inclusive após conversão e soma. Validar escala antes da gravação: o arredondamento implícito do banco não substitui `HALF_EVEN` no motor `BigDecimal`.
 - Não introduzir um limite de sinal para a taxa base configurável sem contrato funcional correspondente. Validar `1 + base_rate + spread > 0` para cada item. Valor de face e câmbio são estritamente positivos; resultados arredondados de VP e pagamento podem ser zero. O deságio é a diferença entre face e VP, sem impor uma regra adicional de sinal não prevista na SPEC.
 - PKs, FKs, unicidades, defaults e verificações da própria linha devem ser implementados nas migrations. Invariantes entre tabelas, agregados e transições exigem os controles transacionais descritos adiante; não tratá-los como um simples `CHECK` de linha.
+
+## Alterações do modelo nesta revisão
+
+- Novas tabelas `receivable_processing` (estado atual do título) e `settlement_request_item` (cada tentativa manual e suas repetições automáticas).
+- `batch` e `settlement_request` recebem contadores e estado `PARTIALLY_SETTLED`; a solicitação recebe modalidade, justificativa, fingerprint e instante de conclusão.
+- Erro e retries saem do cabeçalho da solicitação e passam à tentativa individual. `has_error` é flag calculada pelo estado, evitando divergência entre booleano e status. Sua expressão deve ser a mesma nas duas tabelas, sempre com estado obrigatório.
+- `settlement` passa a representar uma liquidação de um único título, com `UNIQUE(receivable_uuid)` e valores individuais. Remover do modelo a antiga `settlement_item` e a unicidade por lote/solicitação: não há cabeçalho financeiro agregado imutável a atualizar a cada sucesso.
+- `outbox_message` e `audit_event` recebem referências ao título e à tentativa. Outbox existe somente após aceite de um título apto, sem estado `BLOCKED`.
+- A revisão é documental. Não executar DDL nem migrar dados nesta etapa. Não há migrations financeiras existentes a converter; se forem criadas antes da implementação desta revisão, planejar migração versionada e compatibilidade, sem reinterpretar mensagens antigas.
 
 ## assignor
 
@@ -33,19 +42,25 @@ Este documento detalha o modelo PostgreSQL exigido por [SPEC.md](SPEC.md) e [AGE
 
 | Campo | Tipo PostgreSQL | Obrigatoriedade e regra |
 |---|---|---|
-| uuid | UUID | Obrigatório; chave primária; gerado no backend; imutável. |
-| active_request_uuid | UUID | Opcional somente em `READY`; FK para `settlement_request`; deve pertencer ao próprio lote. |
-| source | VARCHAR | Obrigatório; `CHECK` em `FORM`, `CSV`, `CNAB`; imutável. |
-| status | VARCHAR | Obrigatório; `DEFAULT 'READY'`; `CHECK` em `READY`, `PENDING`, `SETTLED`, `FAILED`. |
-| created_by_issuer | VARCHAR | Obrigatório; `iss` autenticado; imutável. |
-| created_by_subject | VARCHAR | Obrigatório; `sub` autenticado; imutável. |
-| version | BIGINT | Obrigatório; `DEFAULT 0`; não negativo; controle de versão otimista. |
-| date_register | TIMESTAMPTZ | Obrigatório; instante de inserção; imutável. |
-| date_updated | TIMESTAMPTZ | Opcional na inserção; obrigatório após alteração; atualizado pelo serviço. |
+| uuid | UUID | PK; gerado no backend; imutável. |
+| active_request_uuid | UUID | Nulo somente em `READY`; FK à solicitação atual ou última terminal do próprio lote. |
+| source | VARCHAR | Obrigatório; `FORM`, `CSV`, `CNAB`; imutável. |
+| status | VARCHAR | Obrigatório; `READY`, `PENDING`, `SETTLED`, `PARTIALLY_SETTLED`, `FAILED`; conforme SPEC D. |
+| item_count | INTEGER | Obrigatório; 1–1.000, fixado no cadastro. |
+| ready_count | INTEGER | Obrigatório; inicialmente `item_count`. |
+| pending_count | INTEGER | Obrigatório; inicialmente zero. |
+| settled_count | INTEGER | Obrigatório; inicialmente zero. |
+| failed_count | INTEGER | Obrigatório; inicialmente zero. |
+| created_by_issuer / created_by_subject | VARCHAR | Dois campos obrigatórios; identidade autenticada do cadastro; imutáveis. |
+| version | BIGINT | Obrigatório; default zero; incremento em toda mudança operacional de título; exposto como `progressVersion`. |
+| date_register | TIMESTAMPTZ | Obrigatório; imutável. |
+| date_updated | TIMESTAMPTZ | Nulo na inserção; obrigatório após alteração. |
 
-**Integridade:** `CHECK` associa `READY` a `active_request_uuid IS NULL` e todos os demais estados a uma referência preenchida. Criar `UNIQUE(uuid, batch_uuid)` em `settlement_request` e FK composta `(active_request_uuid, uuid)` para `(uuid, batch_uuid)`, impedindo solicitação ativa de outro lote.
+**Checks:** contadores não negativos, soma igual a `item_count`. `READY` exige todos prontos e referência nula; `PENDING` exige pendentes; `SETTLED` exige todos liquidados; `PARTIALLY_SETTLED` exige zero prontos/pendentes e pelo menos um sucesso e uma falha; `FAILED` exige todos falhos. Estados diferentes de `READY` exigem referência preenchida e zero prontos. FK composta `(active_request_uuid, uuid)` referencia `settlement_request(uuid, batch_uuid)`.
 
-**Transições:** `READY` para `PENDING`; `PENDING` para `SETTLED` ou `FAILED`; `FAILED` para `PENDING` somente por novo aceite manual. `SETTLED` é terminal. Em estado terminal, manter a referência da última solicitação. Nova tentativa substitui apenas essa referência e preserva o histórico. Cadastro contém 1–1.000 recebíveis, sujeito ao limite configurado na SPEC, e uma outbox bloqueada; não existe lote vazio após commit.
+**Transições:** primeira solicitação inclui todos os títulos; lote sai de `READY` para `PENDING` ou `FAILED` se nenhum passar na validação financeira. Depois pode concluir em `SETTLED`, `PARTIALLY_SETTLED` ou `FAILED`. Reprocessamento de falhos pode retornar a `PENDING` ou permanecer parcial/falho se todos os selecionados forem rejeitados no aceite. `SETTLED` é terminal. Uma solicitação pode ter êxito completo sobre uma seleção e deixar falhas fora dela no lote.
+
+Contadores e status são projeções operacionais, nunca resultados financeiros históricos. Atualizá-los por deltas correspondentes à transição efetivamente gravada, com versão esperada, na mesma transação do título/tentativa. Reentrega não aplica delta novamente. Conflito faz rollback e releitura/repetição da transação local; não desfaz commits de outros títulos. Verificações diferidas conferem projeção contra os estados atuais. A contenção dessa linha deve ser medida; processamento independente não promete ausência de disputa pelo agregado.
 
 ## receivable
 
@@ -61,90 +76,127 @@ Este documento detalha o modelo PostgreSQL exigido por [SPEC.md](SPEC.md) e [AGE
 | payment_currency | VARCHAR | Obrigatório; `CHECK` em `BRL`, `USD`; revisão da importação usa BRL como padrão. |
 | date_register | TIMESTAMPTZ | Obrigatório; instante de inserção; imutável. |
 
-**Integridade:** `UNIQUE(assignor_uuid, type, external_reference)`, sem filtro por estado do lote ou exclusão lógica do cedente. Referência normalizada também deve ser validada na gravação; sua comparação preserva caracteres e zeros, sem conversão numérica ou alteração de caixa implícita. Todos os campos são imutáveis após o cadastro; não adicionar títulos a um lote já cadastrado. `status`, `version`, `date_updated` e `deleted` não são necessários aqui: estado operacional pertence ao lote e à solicitação.
+**Integridade:** `UNIQUE(assignor_uuid, type, external_reference)`, sem filtro por estado do lote ou exclusão lógica do cedente. Referência normalizada também deve ser validada na gravação; sua comparação preserva caracteres e zeros, sem conversão numérica ou alteração de caixa implícita. Todos os campos são imutáveis após o cadastro; não adicionar títulos a um lote já cadastrado. `status`, `version`, `date_updated` e `deleted` não são necessários aqui: estado operacional pertence a `receivable_processing`, separado dos dados financeiros imutáveis.
 
-## settlement_request
+## receivable_processing
+
+Uma linha por recebível, criada no cadastro. O `uuid` é PK própria; `receivable_uuid` tem FK e `UNIQUE`, conforme a convenção global.
 
 | Campo | Tipo PostgreSQL | Obrigatoriedade e regra |
 |---|---|---|
-| uuid | UUID | Obrigatório; chave primária; gerado no backend; imutável. |
-| batch_uuid | UUID | Obrigatório; FK para `batch`; várias solicitações históricas por lote. |
-| exchange_rate_uuid | UUID | Opcional para lote exclusivamente BRL; FK para `exchange_rate`; obrigatório se houver USD. |
-| operation | VARCHAR | Obrigatório; `CHECK (operation = 'SETTLEMENT')` nesta entrega. |
-| idempotency_key | VARCHAR | Obrigatório; comparação exata; escopo global por operação, sem incluir operador. |
-| status | VARCHAR | Obrigatório; `DEFAULT 'PENDING'`; `CHECK` em `PENDING`, `SETTLED`, `FAILED`. |
-| accepted_at | TIMESTAMPTZ | Obrigatório; instante do aceite; imutável. |
-| requested_by_issuer | VARCHAR | Obrigatório; `iss` autenticado; imutável. |
-| requested_by_subject | VARCHAR | Obrigatório; `sub` autenticado; imutável. |
-| calculation_date | DATE | Obrigatório; data de `accepted_at` em `America/Sao_Paulo`. |
-| term_convention | VARCHAR | Obrigatório; `CHECK (term_convention = 'ACTUAL_30')`: dias corridos divididos por 30. |
-| base_rate | NUMERIC(24,12) | Obrigatório; fração decimal mensal, copiada da configuração vigente no aceite. |
-| rule_version | VARCHAR | Obrigatório; identifica versão suportada pelos dois motores. |
-| calculation_policy | VARCHAR | Obrigatório; `CHECK (calculation_policy = 'DECIMAL_50')`: 50 algarismos significativos, inclusive na potência. |
-| rounding_policy | VARCHAR | Obrigatório; `CHECK (rounding_policy = 'HALF_EVEN')`; etapas de arredondamento conforme SPEC. |
-| exchange_rate_value | NUMERIC(24,12) | Opcional junto com a referência cambial; se presente, finito e positivo; BRL por USD. |
-| exchange_rate_effective_from | TIMESTAMPTZ | Opcional junto com a referência cambial; vigência copiada no aceite. |
-| retry_count | INTEGER | Obrigatório; `DEFAULT 0`; `CHECK (retry_count BETWEEN 0 AND 3)`; repetições adicionais, não a tentativa inicial. |
-| next_retry_at | TIMESTAMPTZ | Opcional; preenchido somente quando houver repetição automática agendada em `PENDING`. |
-| failure_code | VARCHAR | Obrigatório e não vazio em `FAILED`; nulo nos demais estados. |
-| failure_message | TEXT | Obrigatório e não vazio em `FAILED`; nulo nos demais estados; diagnóstico sem segredos. |
-| version | BIGINT | Obrigatório; `DEFAULT 0`; não negativo; controle de versão otimista. |
-| date_register | TIMESTAMPTZ | Obrigatório; instante de inserção; imutável. |
-| date_updated | TIMESTAMPTZ | Opcional na inserção; obrigatório após alteração; atualizado pelo serviço. |
+| uuid | UUID | PK; obrigatório. |
+| receivable_uuid | UUID | FK `receivable`; obrigatório e único. |
+| active_attempt_uuid | UUID | Nulo em `READY`; FK à tentativa atual/última do mesmo título. |
+| status | VARCHAR | Obrigatório; default `READY`; `READY`, `PENDING`, `SETTLED`, `FAILED`. |
+| has_error | BOOLEAN | Obrigatório, gerado: `GENERATED ALWAYS AS (status = 'FAILED') STORED`; não editável. |
+| attempt_number | INTEGER | Obrigatório; zero em `READY`; maior que zero nos demais; ordinal manual atual. |
+| version | BIGINT | Obrigatório; default zero; optimistic locking. |
+| date_register | TIMESTAMPTZ | Obrigatório; imutável. |
+| date_updated | TIMESTAMPTZ | Nulo na inserção; preenchido após alteração. |
 
-**Unicidade:** `UNIQUE(operation, idempotency_key)` e índice único parcial em `batch_uuid WHERE status = 'PENDING'`. A unicidade `(uuid, batch_uuid)` dá suporte às FKs compostas. Não aplicar unicidade global a `batch_uuid`, pois o lote pode ter tentativas manuais históricas.
+FK composta `(active_attempt_uuid, receivable_uuid)` para `settlement_request_item(uuid, receivable_uuid)`. `CHECK` associa `READY` a referência nula/ordinal zero e os demais à referência preenchida/ordinal positivo. `SETTLED` é terminal e exige liquidação única confirmada. Nova tentativa manual somente de `FAILED`, incrementando ordinal; não substituir ou apagar a tentativa anterior. O estado acompanha a tentativa referenciada; código/mensagem de erro são lidos dela, sem duplicar diagnóstico nesta tabela. Estado atual e flag são expostos junto ao título na API.
 
-**Snapshot:** referência, valor e vigência cambial são todos nulos ou todos preenchidos, protegidos por `CHECK`. Para lote exclusivamente BRL, gravar todos nulos; para qualquer item USD, gravar todos preenchidos e conferir a cotação vigente mais recente, não futura e com idade de até 24 horas em `accepted_at`. Identidade, operação/chave, lote, aceite, data, políticas, taxas e câmbio ficam imutáveis. Somente estado, retry, diagnóstico, versão e data de atualização podem mudar.
+## settlement_request
 
-**Estados:** `PENDING` para `SETTLED` ou `FAILED`; estados terminais não reabrem. `next_retry_at` deve ser nulo em estado terminal; diagnóstico definitivo existe somente em `FAILED`. O orçamento é uma tentativa inicial e até três adicionais. Cada repetição é reservada atomicamente, incrementando o contador antes da execução; reinício nunca o zera. Persistir a reserva e o agendamento fora da transação financeira sujeita a rollback, verificando versão e solicitação ativa, para que a falha não devolva orçamento consumido. O agendamento de 1, 5 e 15 segundos é persistido e consumido sem autorizar repetições extras. Nova tentativa manual cria outra linha e outra chave, mantendo a anterior intacta.
+Cabeçalho operacional de uma seleção fixa de títulos, não cabeçalho de liquidação financeira.
 
-Não revalidar envelhecimento da cotação ou vencimento com a data corrente durante retries automáticos. Mesma chave/lote consulta a solicitação existente; mesma chave em outro lote conflita. Conferir solicitação ativa junto ao controle de versão antes de qualquer efeito financeiro.
+| Campo | Tipo PostgreSQL | Obrigatoriedade e regra |
+|---|---|---|
+| uuid | UUID | PK; obrigatório. |
+| batch_uuid | UUID | FK `batch`; obrigatório. |
+| operation | VARCHAR | Obrigatório; `SETTLEMENT`. |
+| kind | VARCHAR | Obrigatório; `INITIAL` ou `REPROCESS`. |
+| reason | VARCHAR(500) | Nulo em `INITIAL`; obrigatório após trim, 1–500 caracteres, em `REPROCESS`. |
+| idempotency_key | VARCHAR | Obrigatório; comparação exata; escopo global por operação. |
+| request_fingerprint | TEXT | Obrigatório; representação canônica de lote, modalidade, UUIDs ordenados e justificativa normalizada; imutável. |
+| status | VARCHAR | Obrigatório; `PENDING`, `SETTLED`, `PARTIALLY_SETTLED`, `FAILED`. |
+| item_count | INTEGER | Obrigatório; 1–1.000; tamanho da seleção imutável. |
+| pending_count / settled_count / failed_count | INTEGER | Três campos obrigatórios, não negativos; soma igual a `item_count`. |
+| accepted_at | TIMESTAMPTZ | Obrigatório; instante de recebimento persistido da solicitação; aceite financeiro é individual. |
+| completed_at | TIMESTAMPTZ | Nulo somente em `PENDING`; obrigatório nos demais; não anterior ao aceite. |
+| requested_by_issuer / requested_by_subject | VARCHAR | Dois campos obrigatórios; identidade autenticada; imutáveis. |
+| calculation_date | DATE | Obrigatório; data de aceite em `America/Sao_Paulo`. |
+| term_convention | VARCHAR | Obrigatório; `ACTUAL_30`. |
+| base_rate | NUMERIC(24,12) | Obrigatório; taxa vigente fixada no aceite. |
+| rule_version | VARCHAR | Obrigatório; versão do cálculo. |
+| calculation_policy / rounding_policy | VARCHAR | Obrigatórios; `DECIMAL_50` e `HALF_EVEN`. |
+| exchange_rate_uuid | UUID | FK `exchange_rate`; opcional conforme regra abaixo. |
+| exchange_rate_value | NUMERIC(24,12) | Nulo com referência nula; se presente, finito e positivo. |
+| exchange_rate_effective_from | TIMESTAMPTZ | Nulo com referência nula; vigência da cotação fixada. |
+| version | BIGINT | Obrigatório; default zero. |
+| date_register | TIMESTAMPTZ | Obrigatório; imutável. |
+| date_updated | TIMESTAMPTZ | Nulo na inserção; preenchido após alteração. |
+
+**Unicidades:** `UNIQUE(operation, idempotency_key)`, `UNIQUE(uuid, batch_uuid)`, índice único parcial em `batch_uuid WHERE status = 'PENDING'` e em `batch_uuid WHERE kind = 'INITIAL'`. Não há unicidade global por lote: reprocessamentos geram solicitações novas. Reservar idempotência e atualizar a versão do lote no mesmo aceite; operações concorrentes não podem aceitar seleções conflitantes.
+
+**Snapshot:** referência/valor/vigência cambial todos nulos ou preenchidos. Se houver USD apto, exigir cotação vigente mais recente com idade de até 24 horas no aceite. Sem cotação válida, títulos USD falham no aceite sem condições ou outbox; BRL prossegue. Lote exclusivamente BRL mantém campos cambiais nulos. Os campos de identidade, seleção, motivo, chave, fingerprint, aceite e condições são imutáveis. Estado, contadores, conclusão, versão e atualização são operacionais. Remover deste cabeçalho `retry_count`, `next_retry_at`, `failure_code` e `failure_message`; pertencem às tentativas individuais.
+
+**Estados:** correspondem aos contadores somente desta seleção; `PENDING` se há pendentes, `SETTLED` se todos concluídos, `FAILED` se todos falhos, `PARTIALLY_SETTLED` se há ambos sem pendentes. Terminais não reabrem. Falha financeira de todos no aceite cria solicitação já `FAILED`, com tentativas rejeitadas e auditoria; POST retorna `422 NENHUM_TITULO_APTO` e referência para consulta, inclusive em replay da mesma chave. Nenhum comando é criado. O lote continua refletindo todos os títulos, inclusive os ausentes da seleção. Totais da API são calculados sobre liquidações da solicitação; não inserir um resultado agregado imutável que precise ser alterado depois.
+
+## settlement_request_item
+
+Cada linha representa uma tentativa manual de um título; retries automáticos pertencem à mesma linha e geram eventos de auditoria próprios.
+
+| Campo | Tipo PostgreSQL | Obrigatoriedade e regra |
+|---|---|---|
+| uuid | UUID | PK; obrigatório; identifica a tentativa. |
+| request_uuid | UUID | FK `settlement_request`; obrigatório. |
+| receivable_uuid | UUID | FK `receivable`; obrigatório; mesmo lote da solicitação. |
+| previous_attempt_uuid | UUID | Nulo na primeira tentativa; FK à tentativa imediatamente anterior, falha, do mesmo título. |
+| attempt_number | INTEGER | Obrigatório; positivo; ordinal manual crescente por título. |
+| status | VARCHAR | Obrigatório; `PENDING`, `SETTLED`, `FAILED`. |
+| has_error | BOOLEAN | Obrigatório, gerado por `status = 'FAILED'`; não editável. |
+| retry_count | INTEGER | Obrigatório; default zero; 0–3 repetições adicionais. |
+| next_retry_at | TIMESTAMPTZ | Somente em `PENDING` com retry agendado; nulo em estado terminal. |
+| completed_at | TIMESTAMPTZ | Nulo em `PENDING`; obrigatório em estado terminal. |
+| failure_code | VARCHAR | Obrigatório e não vazio somente em `FAILED`. |
+| failure_message | TEXT | Obrigatório somente em `FAILED`; mensagem segura em pt-BR. |
+| failure_stage | VARCHAR | Obrigatório somente em `FAILED`; `ACCEPTANCE` ou `PROCESSING`. |
+| failure_occurred_at | TIMESTAMPTZ | Obrigatório somente em `FAILED`; instante do erro final. |
+| version | BIGINT | Obrigatório; default zero; verificado junto ao estado e tentativa ativa. |
+| date_register | TIMESTAMPTZ | Obrigatório; imutável. |
+| date_updated | TIMESTAMPTZ | Nulo na inserção; preenchido após alteração. |
+
+**Unicidades:** `UNIQUE(request_uuid, receivable_uuid)`, `UNIQUE(receivable_uuid, attempt_number)`, `UNIQUE(uuid, receivable_uuid)` e índice único parcial em `receivable_uuid WHERE status = 'PENDING'`. FK composta `(previous_attempt_uuid, receivable_uuid)` para `(uuid, receivable_uuid)` desta tabela. Conferir ordinal anterior, modalidade `REPROCESS` e estado anterior `FAILED`; primeira tentativa é ordinal 1 em `INITIAL`. Vínculos e ordinal são imutáveis.
+
+**Checks e fluxo:** campos de falha são todos preenchidos somente em `FAILED`, todos nulos nos demais. Conclusão não antecede cadastro; próximo retry é nulo nos terminais. Falha `ACCEPTANCE` não tem condições, comando ou retries. Tentativa `PENDING` tem condições fixadas e comando; sucesso tem liquidação e auditoria no mesmo commit. Falha `PROCESSING` tem condições e nenhuma liquidação própria. Estados terminais são imutáveis; nova tentativa cria outra linha e preserva o erro antigo.
+
+Persistir reserva de cada repetição em transação operacional, antes da execução financeira, verificando versão, estado, tentativa ativa e agendamento. Uma reentrega não reserva outra repetição antes do prazo nem zera o contador. Registrar ordinal e agendamento em auditoria no mesmo commit da reserva, com unicidade por tentativa/ordinal/tipo. Conflito de concorrência exige reler antes de classificar falha; não gastar retries financeiros por disputa de projeção do lote. Snapshot permanece fixo, mesmo que cotações envelheçam ou a data mude. A interrupção exige retomar a execução reservada, não criar orçamento extra.
 
 ## receivable_terms
 
 | Campo | Tipo PostgreSQL | Obrigatoriedade e regra |
 |---|---|---|
-| uuid | UUID | Obrigatório; chave primária; gerado no backend; imutável. |
-| request_uuid | UUID | Obrigatório; FK para `settlement_request`. |
-| receivable_uuid | UUID | Obrigatório; FK para `receivable`; mesmo lote da solicitação. |
-| term_days | INTEGER | Obrigatório; `CHECK (term_days >= 0)`; vencimento menos data do cálculo. |
-| spread | NUMERIC(24,12) | Obrigatório; fração decimal mensal fixada por tipo no aceite. |
-| date_register | TIMESTAMPTZ | Obrigatório; instante de inserção; imutável. |
+| uuid | UUID | PK; obrigatório. |
+| attempt_uuid | UUID | FK `settlement_request_item`; obrigatório e único. |
+| term_days | INTEGER | Obrigatório; não negativo; vencimento menos data fixada no aceite. |
+| spread | NUMERIC(24,12) | Obrigatório; fixado por tipo no aceite. |
+| date_register | TIMESTAMPTZ | Obrigatório; imutável. |
 
-**Integridade:** `UNIQUE(request_uuid, receivable_uuid)`; uma condição por recebível em cada solicitação. Solicitação e recebível pertencem ao mesmo lote. O aceite grava exatamente uma linha para cada título do lote e confere dias e spread contra a regra suportada; os spreads desta entrega são os da SPEC. Linhas imutáveis, sem inclusão tardia após o aceite. Prazo zero é permitido.
+Condições existem somente para tentativas financeiramente aptas no aceite, uma por tentativa. Solicitação e título são obtidos pela tentativa; não duplicar vínculos. No novo modelo, `attempt_uuid` substitui `request_uuid`/`receivable_uuid` desta tabela. Condições e composição da seleção ficam imutáveis após aceite; prazo zero é permitido. Nova tentativa manual válida recebe nova linha; nunca reutilizar condições de tentativa antiga. Precisão e golden cases permanecem os mesmos.
 
 ## settlement
 
-| Campo | Tipo PostgreSQL | Obrigatoriedade e regra |
-|---|---|---|
-| uuid | UUID | Obrigatório; chave primária; gerado no backend; imutável. |
-| batch_uuid | UUID | Obrigatório; FK para `batch`; `UNIQUE`. |
-| request_uuid | UUID | Obrigatório; FK para `settlement_request`; `UNIQUE`; solicitação do mesmo lote. |
-| settled_at | TIMESTAMPTZ | Obrigatório; instante financeiro da conclusão, gravado na transação de sucesso. |
-| total_face_value_brl | NUMERIC(19,2) | Obrigatório; positivo; soma das faces de todos os recebíveis. |
-| total_present_value_brl | NUMERIC(19,2) | Obrigatório; não negativo; soma dos VPs individuais em BRL, já arredondados. |
-| total_discount_brl | NUMERIC(19,2) | Obrigatório; `CHECK (total_discount_brl = total_face_value_brl - total_present_value_brl)`. |
-| total_payment_brl | NUMERIC(19,2) | Obrigatório; não negativo; soma dos pagamentos em BRL; zero se não houver. |
-| total_payment_usd | NUMERIC(19,2) | Obrigatório; não negativo; soma dos pagamentos em USD; zero se não houver. |
-| date_register | TIMESTAMPTZ | Obrigatório; instante de inserção; imutável. |
-
-**Integridade:** `UNIQUE(batch_uuid)` e `UNIQUE(request_uuid)`. FK composta `(request_uuid, batch_uuid)` para `settlement_request(uuid, batch_uuid)`. Existência do cabeçalho implica conclusão de todos os recebíveis do lote na mesma transação. Conferir somas por moeda e soma do deságio contra os itens; não somar BRL e USD no mesmo total nem arredondar uma soma de valores não finalizados. Campos não têm default financeiro: o serviço fornece os totais calculados, incluindo zeros de moedas ausentes.
-
-## settlement_item
+Resultado financeiro imutável de **um título**. Consolida os antigos cabeçalho por lote e `settlement_item`; totais por lote/solicitação passam a ser consultas agregadas. A tabela `settlement_item` deixa de ser necessária no modelo proposto.
 
 | Campo | Tipo PostgreSQL | Obrigatoriedade e regra |
 |---|---|---|
-| uuid | UUID | Obrigatório; chave primária; gerado no backend; imutável. |
-| settlement_uuid | UUID | Obrigatório; FK para `settlement`. |
-| receivable_uuid | UUID | Obrigatório; FK para `receivable`; `UNIQUE` global. |
-| terms_uuid | UUID | Obrigatório; FK para `receivable_terms`; `UNIQUE`; condições do mesmo recebível e da solicitação liquidada. |
-| present_value_brl | NUMERIC(19,2) | Obrigatório; não negativo; VP final em BRL, arredondado a duas casas. |
-| discount_brl | NUMERIC(19,2) | Obrigatório; face do recebível menos `present_value_brl`. |
-| payment_amount | NUMERIC(19,2) | Obrigatório; não negativo; valor final na moeda de pagamento. |
-| payment_currency | VARCHAR | Obrigatório; `CHECK` em `BRL`, `USD`; igual à moeda do recebível. |
-| date_register | TIMESTAMPTZ | Obrigatório; instante de inserção; imutável. |
+| uuid | UUID | PK; obrigatório. |
+| batch_uuid | UUID | FK `batch`; obrigatório; sem unicidade por lote. |
+| request_uuid | UUID | FK `settlement_request`; obrigatório; sem unicidade por solicitação. |
+| receivable_uuid | UUID | FK `receivable`; obrigatório; `UNIQUE` global. |
+| attempt_uuid | UUID | FK `settlement_request_item`; obrigatório; `UNIQUE`. |
+| terms_uuid | UUID | FK `receivable_terms`; obrigatório; `UNIQUE`. |
+| settled_at | TIMESTAMPTZ | Obrigatório; instante individual da liquidação. |
+| present_value_brl | NUMERIC(19,2) | Obrigatório; não negativo; VP final arredondado. |
+| discount_brl | NUMERIC(19,2) | Obrigatório; face imutável menos VP. |
+| payment_amount | NUMERIC(19,2) | Obrigatório; não negativo; pagamento na moeda definida. |
+| payment_currency | VARCHAR | Obrigatório; `BRL`/`USD`; igual ao título. |
+| date_register | TIMESTAMPTZ | Obrigatório; imutável. |
 
-**Integridade:** `UNIQUE(receivable_uuid)` impede liquidar novamente o título, mesmo com outra chave. `UNIQUE(terms_uuid)` impede reutilizar condições. Recebível deve pertencer ao lote do cabeçalho; condições devem corresponder ao recebível e à solicitação do cabeçalho. Pagamento BRL deve ser igual ao VP em BRL (`CHECK` na própria linha); pagamento USD utiliza o VP em BRL já arredondado, dividido pelo câmbio do snapshot e arredondado novamente. Validar deságio e moeda contra o recebível. Não duplicar valor de face ou vencimento: a origem referenciada é imutável.
+`UNIQUE(receivable_uuid)` é a garantia final contra liquidação duplicada, independentemente do operador, chave, tentativa ou lote informado. FK composta `(request_uuid, batch_uuid)` para a solicitação e `(attempt_uuid, receivable_uuid)` para a tentativa. Trigger confere título no lote, solicitação da tentativa, condições da mesma tentativa e versão ativa antes do efeito financeiro. Pagamento BRL igual ao VP é `CHECK` local; USD usa o câmbio fixado, conforme SPEC. Não duplicar valor de face/vencimento, já imutáveis no título.
+
+Existência desta linha exige tentativa e estado atual `SETTLED`, mais auditoria de sucesso no mesmo commit. Não exige sucesso dos demais títulos. Remover os antigos totais e `UNIQUE(batch_uuid)`/`UNIQUE(request_uuid)` do desenho anterior. Totais confirmados são somas dos resultados existentes, por moeda, incluindo sucessos de lotes pendentes/parciais. Validar limites de valores e agregados na política de aceite considerando sucessos anteriores e a nova seleção; falha de um cálculo afeta somente seu título, sem invalidar valores já confirmados.
 
 ## exchange_rate_proposal
 
@@ -184,34 +236,34 @@ Não revalidar envelhecimento da cotação ou vencimento com a data corrente dur
 
 **Integridade:** `UNIQUE(base_currency, quote_currency, effective_from)` impede empate de vigência; `UNIQUE(proposal_uuid)` limita uma cotação por aprovação. Par e valor devem corresponder à proposta `APPROVED`; `effective_from = decided_at`. Cotação é somente inserção/leitura, sem substituição de histórico.
 
-**Inicialização:** não há cotação automática ou importada do mock nesta entrega. A primeira cotação usa o mesmo fluxo de proposta e aprovação por usuários distintos. Enquanto não existir cotação válida, lotes USD são bloqueados no aceite; BRL continua disponível. Massa de teste deve preservar essas relações.
+**Inicialização:** não há cotação automática ou importada do mock nesta entrega. A primeira cotação usa o mesmo fluxo de proposta e aprovação por usuários distintos. Enquanto não existir cotação válida, títulos USD falham no aceite; BRL continua disponível, inclusive no mesmo lote. Massa de teste deve preservar essas relações.
 
 ## outbox_message
 
 | Campo | Tipo PostgreSQL | Obrigatoriedade e regra |
 |---|---|---|
-| uuid | UUID | Obrigatório; chave primária; gerado no backend; imutável. |
-| batch_uuid | UUID | Obrigatório; FK para `batch`; chave de particionamento Kafka. |
-| request_uuid | UUID | Nulo em `BLOCKED`; obrigatório nos demais estados; FK para `settlement_request` do mesmo lote. |
-| topic | VARCHAR | Obrigatório; `CHECK` em `credit-lot`, `credit-lot.dlq`. |
-| status | VARCHAR | Obrigatório; `CHECK` em `BLOCKED`, `READY`, `CLAIMED`, `SENT`; fornecido conforme o fluxo. |
-| payload | JSONB | Nulo em `BLOCKED`; obrigatório nos demais estados; objeto JSON com apenas `batchUuid` e `idempotencyKey`, ambos strings. |
-| publish_attempts | INTEGER | Obrigatório; `DEFAULT 0`; não negativo; incrementado ao reivindicar uma tentativa de envio. |
-| next_attempt_at | TIMESTAMPTZ | Obrigatório em `READY`; nulo nos demais estados; controla elegibilidade de envio. |
-| claim_token | UUID | Obrigatório somente em `CLAIMED`; nulo nos demais estados; token de propriedade da reivindicação, não FK. |
-| claim_expires_at | TIMESTAMPTZ | Obrigatório somente em `CLAIMED`; nulo nos demais estados. |
-| sent_at | TIMESTAMPTZ | Obrigatório somente em `SENT`; nulo nos demais estados; preenchido após confirmação do broker. |
-| version | BIGINT | Obrigatório; `DEFAULT 0`; não negativo; controle de versão otimista. |
-| date_register | TIMESTAMPTZ | Obrigatório; instante de inserção; imutável. |
-| date_updated | TIMESTAMPTZ | Opcional na inserção; obrigatório após alteração; atualizado pelo serviço. |
+| uuid | UUID | PK; obrigatório. |
+| batch_uuid | UUID | FK `batch`; obrigatório. |
+| request_uuid | UUID | FK `settlement_request`; obrigatório. |
+| receivable_uuid | UUID | FK `receivable`; obrigatório; chave Kafka. |
+| attempt_uuid | UUID | FK `settlement_request_item`; obrigatório. |
+| topic | VARCHAR | Obrigatório; `credit-receivable` ou `credit-receivable.dlq`. |
+| status | VARCHAR | Obrigatório; `READY`, `CLAIMED`, `SENT`; não há `BLOCKED`. |
+| payload | JSONB | Obrigatório; exatamente `batchUuid`, `receivableUuid`, `requestUuid`, `idempotencyKey`, todos strings. |
+| publish_attempts | INTEGER | Obrigatório; default zero; não negativo; incrementado por reivindicação. |
+| next_attempt_at | TIMESTAMPTZ | Obrigatório somente em `READY`. |
+| claim_token | UUID | Obrigatório somente em `CLAIMED`; token de propriedade, não FK. |
+| claim_expires_at | TIMESTAMPTZ | Obrigatório somente em `CLAIMED`; prazo finito. |
+| sent_at | TIMESTAMPTZ | Obrigatório somente em `SENT`, após confirmação do broker. |
+| version | BIGINT | Obrigatório; default zero. |
+| date_register | TIMESTAMPTZ | Obrigatório; imutável. |
+| date_updated | TIMESTAMPTZ | Nulo na inserção; preenchido após alteração. |
 
-**Integridade:** FK composta `(request_uuid, batch_uuid)` para `settlement_request(uuid, batch_uuid)`; `request_uuid` nulo é permitido apenas em `BLOCKED`. Criar índice único parcial em `batch_uuid WHERE status = 'BLOCKED'` e `UNIQUE(request_uuid, topic)` para impedir mais de um comando lógico do mesmo tipo por solicitação. Esses controles complementam a criação transacional de exatamente uma outbox inicial.
+`UNIQUE(attempt_uuid, topic)` impede comandos lógicos repetidos para a mesma tentativa/tópico. FK composta `(request_uuid, batch_uuid)` para solicitação e `(attempt_uuid, receivable_uuid)` para tentativa; trigger confere solicitação da tentativa e título no lote. Payload tem `CHECK` de chaves/tipos e conferência contra vínculos e chave de idempotência persistidos. Não incluir JWT, valores financeiros, stack trace ou erro no comando. Referências/tópico/payload são imutáveis desde a criação; chave Kafka deriva do título.
 
-**Payload:** `CHECK` valida objeto, conjunto exato de duas chaves e tipos string; o serviço confere `batchUuid` contra `batch_uuid` e `idempotencyKey` contra a solicitação. Não adicionar JWT, dados financeiros, erro ou correlação à mensagem. A chave Kafka deriva de `batch_uuid`. Após liberação, lote, solicitação, tópico e payload ficam imutáveis.
+Criar uma linha `READY` no aceite de cada título apto. Falha de validação no aceite não cria comando nem DLQ. Falha definitiva no worker cria uma linha `READY` para a DLQ, no mesmo commit da falha individual. Reprocessamento manual cria outra tentativa e outro comando apenas para cada título selecionado e apto.
 
-**Estados e nulabilidade:** aplicar `CHECK` para as condições de cada campo acima. `BLOCKED` exige tópico `credit-lot`, payload/solicitação nulos, zero tentativas e ausência de horários de envio/reivindicação. No primeiro aceite, essa linha passa para `READY`; uma nova tentativa manual cria outra linha `READY`. Falha definitiva cria uma linha `READY` para `credit-lot.dlq` na transação de falha.
-
-O relay move `READY` para `CLAIMED` com versão esperada, token exclusivo e prazo finito de recuperação. Só o detentor do token atual pode concluir a reivindicação. Confirmação do broker move para `SENT`; falha ou reivindicação expirada volta para `READY`, limpa token/prazo e define próximo envio. Ao entrar em `CLAIMED`, limpar `next_attempt_at`; ao entrar em `SENT`, limpar todos os campos de agendamento/reivindicação. `SENT` é terminal. Nunca descartar a mensagem por limite de tentativas de publicação; o orçamento de retries do worker é independente.
+Relay muda `READY` para `CLAIMED`, limpa agendamento e grava token/prazo com versão esperada. Somente dono do token atual pode finalizar. Após confirmação do broker, `SENT`, com `sent_at` e sem agendamento/reivindicação. Falha ou prazo expirado devolve a `READY` com nova agenda. Aplicar checks condicionais explícitos a todos esses campos; `SENT` é terminal. Não descartar por limite de envio. Republicação após falha entre envio e marcação é prevista e protegida pela liquidação única no banco.
 
 ## audit_event
 
@@ -220,6 +272,10 @@ O relay move `READY` para `CLAIMED` com versão esperada, token exclusivo e praz
 | uuid | UUID | Obrigatório; chave primária; gerado no backend; imutável. |
 | batch_uuid | UUID | Opcional conforme evento; FK para `batch`. |
 | request_uuid | UUID | Opcional conforme evento; FK para `settlement_request`. |
+| receivable_uuid | UUID | Opcional conforme evento; FK para `receivable`. |
+| attempt_uuid | UUID | Opcional conforme evento; FK para `settlement_request_item`. |
+| settlement_uuid | UUID | Obrigatório no sucesso; FK para `settlement`. |
+| retry_number | INTEGER | Obrigatório em evento de repetição/falha transitória; ordinal 0–3; nulo nos demais. |
 | assignor_uuid | UUID | Opcional conforme evento; FK para `assignor`. |
 | proposal_uuid | UUID | Opcional conforme evento; FK para `exchange_rate_proposal`. |
 | exchange_rate_uuid | UUID | Opcional conforme evento; FK para `exchange_rate`. |
@@ -230,7 +286,7 @@ O relay move `READY` para `CLAIMED` com versão esperada, token exclusivo e praz
 | details | JSONB | Obrigatório; objeto JSON com conteúdo validado por tipo de evento; sem JWT, senhas ou arquivos integrais. |
 | date_register | TIMESTAMPTZ | Obrigatório; instante de inserção; imutável. |
 
-**Integridade:** referências opcionais dependem do tipo de evento, não de conveniência do chamador. Quando houver solicitação, exigir lote e conferir pertencimento; quando houver cotação e proposta, conferir a relação. `details` deve ser objeto JSON e seguir contrato por evento. Não armazenar dados financeiros exclusivamente no JSON quando já pertencem às tabelas financeiras.
+**Integridade:** referências opcionais dependem do tipo de evento, não de conveniência do chamador. Quando houver solicitação, exigir lote e conferir pertencimento; quando houver tentativa, exigir título/solicitação e conferir todos os vínculos; quando houver liquidação, conferir tentativa/título correspondentes; quando houver cotação e proposta, conferir a relação. `details` deve ser objeto JSON e seguir contrato por evento. Não armazenar dados financeiros exclusivamente no JSON quando já pertencem às tabelas financeiras.
 
 | `event_type` | Referências obrigatórias | Conteúdo mínimo de `details` |
 |---|---|---|
@@ -238,49 +294,58 @@ O relay move `READY` para `CLAIMED` com versão esperada, token exclusivo e praz
 | `ASSIGNOR_UPDATED` | Cedente | Campos alterados e valores anterior/novo. |
 | `ASSIGNOR_DELETED` / `ASSIGNOR_RESTORED` | Cedente | Transição de exclusão lógica. |
 | `BATCH_CREATED` | Lote | Origem e quantidade de recebíveis. |
-| `SETTLEMENT_REQUESTED` | Lote e solicitação | Versão da regra e referência ao snapshot persistido. |
-| `SETTLEMENT_SUCCEEDED` | Lote e solicitação | Quantidade de itens e totais separados por moeda; resultado localizado pela unicidade de `settlement.batch_uuid`. |
-| `SETTLEMENT_FAILED` | Lote e solicitação | Código, mensagem e contador de retries; sem conteúdo sensível. |
+| `SETTLEMENT_REQUESTED` | Lote e solicitação | Seleção inicial e referência às condições persistidas. |
+| `SETTLEMENT_REPROCESS_REQUESTED` | Lote e solicitação | Seleção explícita, justificativa e referências às tentativas anteriores; ator humano autenticado. |
+| `RECEIVABLE_ATTEMPT_ACCEPTED` | Lote, solicitação, título e tentativa | Ordinal manual, vínculo anterior e condições fixadas. |
+| `RECEIVABLE_ATTEMPT_REJECTED` | Lote, solicitação, título e tentativa | Código/mensagem/etapa `ACCEPTANCE` e instante; tentativa sem comando. |
+| `RECEIVABLE_PROCESSING_RETRY_SCHEDULED` | Lote, solicitação, título e tentativa | Próximo ordinal (1–3), agenda e causa segura. |
+| `RECEIVABLE_PROCESSING_ATTEMPT_FAILED` | Lote, solicitação, título e tentativa | Ordinal (0 inicial, 1–3 adicionais), código/mensagem e instante de cada falha de processamento. |
+| `RECEIVABLE_SETTLED` | Lote, solicitação, título, tentativa e liquidação | Referência ao resultado e condições; ator técnico, solicitante preservado pela solicitação. |
+| `RECEIVABLE_SETTLEMENT_FAILED` | Lote, solicitação, título e tentativa | Falha definitiva `PROCESSING`, instante, código/mensagem e retries; referência à DLQ. |
 | `EXCHANGE_RATE_PROPOSED` | Proposta | Par, valor proposto e justificativa. |
 | `EXCHANGE_RATE_APPROVED` | Proposta e cotação | Valor aprovado e vigência. |
 | `EXCHANGE_RATE_REJECTED` | Proposta | Justificativa da rejeição. |
 
-Implementar `CHECK` dos tipos e referências obrigatórias. Referências não pertinentes ficam nulas. Para sucesso/falha terminal e decisão cambial, impedir evento duplicado da mesma entidade e tipo com índices únicos parciais. O ator do aceite é humano; o ator da liquidação pode ser o worker, preservando o solicitante autenticado pela solicitação referenciada. Correlação do processamento deve ser recuperável no banco a partir da solicitação/evento de aceite, sem ampliar o payload Kafka. Erros técnicos preservam stack trace nos logs estruturados conforme AGENTS.md.
+Implementar `CHECK` dos tipos e referências obrigatórias. Referências não pertinentes ficam nulas. Impedir mais de um evento terminal por tentativa com índice único parcial em `attempt_uuid WHERE event_type IN ('RECEIVABLE_ATTEMPT_REJECTED', 'RECEIVABLE_SETTLED', 'RECEIVABLE_SETTLEMENT_FAILED')`; conferir correspondência com o estado. Exigir `UNIQUE(settlement_uuid)` no vínculo de sucesso. Para eventos automáticos, índice único parcial `(attempt_uuid, event_type, retry_number)`; para aceite/reprocessamento, unicidade por solicitação/tipo; para decisão cambial, unicidade por proposta nos tipos terminais. Uma tentativa histórica falha não é alterada quando uma nova tem sucesso. O ator do aceite é humano; o ator da liquidação pode ser o worker, preservando o solicitante autenticado pela solicitação referenciada. Correlação do processamento deve ser recuperável no banco a partir da solicitação/evento de aceite, sem ampliar o payload Kafka. Erros técnicos preservam stack trace nos logs estruturados conforme AGENTS.md.
 
 ## Integridade entre tabelas e cardinalidades
 
 | Relação | Cardinalidade e garantia |
 |---|---|
-| Cedente / recebível | Um cedente possui zero ou muitos títulos; cada título possui exatamente um cedente. Exclusão lógica não desfaz a relação. |
-| Lote / recebível | Um lote cadastrado possui de 1 ao limite configurado de títulos, até 1.000 nesta entrega; cada título pertence a um lote. Composição não muda após cadastro. |
-| Lote / solicitação | Zero ou muitas solicitações históricas; no máximo uma `PENDING`. A referência ativa aponta à solicitação atual ou à última terminal. |
-| Solicitação / condições | Uma condição para cada recebível do lote; novas tentativas manuais geram outro conjunto. |
-| Lote / liquidação / itens | Zero ou uma liquidação por lote; quando existente, exatamente um item por recebível, sem omissões ou itens extras. |
-| Proposta / cotação | Zero cotações para proposta pendente/rejeitada; exatamente uma para aprovada. Toda cotação possui uma proposta. |
-| Lote / outbox | Uma outbox bloqueada no cadastro, reutilizada no primeiro aceite; outras linhas somente para novas solicitações ou DLQ. |
-| Solicitação / outbox | Um comando `credit-lot` por aceite; no máximo um comando `credit-lot.dlq` após falha definitiva. |
+| Cedente / recebível | Um cedente, vários títulos; cada título tem um cedente; identidade global preservada após exclusão lógica. |
+| Lote / recebível / estado atual | 1–1.000 títulos fixos; exatamente um estado operacional por título. |
+| Lote / solicitação | Várias históricas, no máximo uma `PENDING`; referência atual ou última terminal no lote. |
+| Solicitação / tentativa | Exatamente uma por título da seleção fixa; inicial cobre todos, reprocessamento apenas falhos selecionados. |
+| Recebível / tentativa | Histórico crescente, no máximo uma pendente; referência atual no estado operacional. |
+| Tentativa / condições | Uma para tentativa apta; nenhuma na falha de validação do aceite. |
+| Recebível / liquidação | Zero ou uma, independentemente de quantidade de tentativas/operadores. |
+| Lote ou solicitação / liquidação | Zero ou várias, sem exigir liquidação de todos os títulos. |
+| Tentativa / outbox | Uma normal se apta; no máximo uma DLQ após falha definitiva de processamento. |
+| Tentativa / auditoria | Vários eventos; exatamente um desfecho ao terminar; retries individualizados. |
+| Proposta / cotação | Zero se pendente/rejeitada; uma se aprovada, com auditoria. |
 
-FK simples prova existência, mas não prova que duas referências pertencem ao mesmo fluxo. Usar as FKs compostas especificadas em `batch`, `settlement` e `outbox_message`. Nas migrations, criar a FK de `batch` após as duas tabelas existirem. No cadastro, inserir lote sem solicitação ativa. No aceite posterior, inserir a solicitação e só então atualizar a referência do lote existente, na mesma transação.
+FK simples verifica existência, não o pertencimento ao mesmo fluxo. Usar FKs compostas definidas acima; criar referências circulares de `batch`/solicitação e estado/tentativa após criar as tabelas. Nos serviços, inserir primeiro a tentativa e então atualizar a referência atual, na mesma transação. Triggers conferem as relações não expressas por FK: solicitação/título no mesmo lote, tentativa anterior, condições, liquidação, payload e auditoria.
 
-Para relações que exigem percorrer tabelas sem duplicar colunas — condições/recebível/solicitação, item/condições/cabeçalho e cotação/proposta — implementar verificações de integridade por triggers nas migrations, além da validação antecipada dos serviços. Validar também referências simultâneas de auditoria e correspondência do payload da outbox. Os dados financeiros e vínculos verificados permanecem imutáveis, evitando que uma alteração posterior invalide a checagem.
-
-Verificações que dependem do conjunto final de uma transação, como cobertura de todos os itens, totais, estado terminal, auditoria de sucesso e correspondência entre proposta aprovada e cotação, devem usar constraint triggers diferidas até o commit. Cobrir também inserções tardias de itens/condições/recebíveis que alterariam conjuntos já finalizados. Não criar consultas por linha que reprocessam o lote inteiro: limitar as verificações ao lote ou à solicitação afetada, agrupar consultas quando possível e medir com 1.000 itens. O serviço continua responsável pelo fluxo e pelas mensagens de negócio; triggers são a proteção de integridade persistida.
+Constraint triggers diferidas verificam no commit: cobertura da seleção no aceite, contadores/estados coerentes, sucesso individual acompanhado de resultado e auditoria, falha sem liquidação da mesma tentativa e cotação aprovada com evento correspondente. Não exigir que todos os títulos estejam liquidados para aceitar o commit de um. Uma falha histórica pode coexistir com liquidação de tentativa posterior. Impedir inclusão tardia de títulos, seleção e condições após aceite. Restringir consultas ao lote/solicitação afetados, agrupar verificações e medir contenção com 1.000 títulos; nunca carregar a base inteira.
 
 ## Transações e controle de concorrência
 
-| Operação | Escritas que pertencem ao mesmo commit | Validações do serviço |
+| Operação | Escritas no mesmo commit | Validações |
 |---|---|---|
-| Cadastro | Lote `READY`, todos os recebíveis, outbox `BLOCKED` e auditoria do cadastro. | Cedentes existentes e ativos, tamanho do lote, normalização, vencimentos, valores, tipos, moedas e duplicidades. Rejeitar o lote inteiro em qualquer falha. |
-| Aceite | Nova solicitação e condições de todos os itens, atualização versionada do lote para `PENDING`, referência ativa, liberação/criação da outbox e auditoria. | Autorização, idempotência, estado, vencimentos, regra suportada, limites numéricos e câmbio válido se necessário. Responder `202` somente após commit. |
-| Sucesso | Cabeçalho, todos os itens, auditoria de sucesso e estados `SETTLED` de solicitação/lote, com controle de versão. | Solicitação ativa, snapshot completo, cálculo reproduzível, totais e unicidade. Erro em qualquer item desfaz toda a transação. |
-| Falha definitiva | Após rollback financeiro: solicitação/lote `FAILED`, diagnóstico, auditoria e outbox de DLQ em transação separada. | Solicitação ainda ativa, pendente e sem liquidação confirmada. Nunca sobrescrever conclusão concorrente. |
-| Decisão cambial | Decisão versionada, auditoria e, somente na aprovação, nova cotação. | Papel do gestor, identidade diferente, estado pendente e dados da decisão. |
+| Cadastro | Lote, todos os títulos, estados `READY` e auditoria; sem outbox. | Cadastro integral; erro/duplicidade rejeita o lote. |
+| Aceite inicial ou reprocessamento | Solicitação, fingerprint, tentativas, condições/outboxes dos aptos, falhas de validação individuais, estados atuais, projeções e auditoria. | JWT/papel, chave, seleção, justificativa, elegibilidade e regras financeiras. Erro de infraestrutura desfaz o aceite, não cria sucesso fictício. |
+| Reserva de retry | Incremento/agendamento da tentativa e auditoria do erro/repetição. | Tentativa ativa, pendente, orçamento e versão; transação operacional fora do rollback financeiro. |
+| Sucesso de um título | Uma liquidação, tentativa/estado atual `SETTLED`, deltas do lote/solicitação e auditoria de sucesso. | Condições, versão/estado ativo e unicidade. Falha desfaz somente esse processamento. |
+| Falha definitiva de um título | Após rollback local: tentativa/estado atual `FAILED`, erro, deltas do lote/solicitação, auditoria e outbox DLQ. | Tentativa ainda ativa, pendente, sem sucesso concorrente; demais títulos preservados. |
+| Decisão cambial | Decisão, auditoria e cotação se aprovada. | Gestor diferente, estado pendente e versão esperada. |
 
-- Todas as alterações concorridas verificam versão e estado esperado. Tratar conflito de unicidade ou versão após rollback, relendo o estado em uma nova transação; não continuar usando uma transação que falhou.
-- Idempotência permanece associada à operação e ao lote por todo o ciclo financeiro. Chaves iguais não criam nova outbox; outra chave em lote pendente conflita; lote concluído devolve resultado existente. Uma solicitação `FAILED` não é reutilizada para nova execução.
-- Mensagem de solicitação antiga não altera o lote nem a solicitação nova. Worker confere operação, chave e solicitação ativa sob controle de versão antes do commit. Kafka, consumer group e bloqueio de botões não substituem garantias PostgreSQL.
-- Reconhecer consumo somente após resultado confirmado ou falha definitiva persistida. Banco indisponível para registrar falha impede reconhecimento e exige recuperação do consumo. Falha após commit pode causar reentrega, nunca novo efeito financeiro.
-- Consulta de cotação e fixação do snapshot ocorrem no aceite; chamadas ao mock ficam fora da transação financeira. Datas e taxas atuais não substituem condições já aceitas. Autorizações são verificadas no engine, nunca inferidas do payload Kafka ou de identidade enviada no body.
+- Verificar versão e estado em todas as escritas concorridas. Conflito exige rollback e nova leitura; não continuar numa transação inválida. Ao repetir transação local, não repetir auditoria, deltas ou resultado já confirmados.
+- Idempotência vincula operação, lote, seleção, modalidade e justificativa. Mesma intenção/chave devolve a solicitação; chave com fingerprint diferente conflita. Consultar registro idempotente antes de validar estado atual. Nova chave não autoriza título já liquidado. Uma tentativa `FAILED` não reabre.
+- Bloquear nova solicitação manual enquanto houver outra pendente no lote; reprocessamento seleciona somente falhos e preserva sucessos. Todos os títulos da solicitação podem ser consumidos independentemente. Aceite financeiro inválido por item não impede os aptos.
+- Mensagem precisa conferir lote, título, solicitação, chave e tentativa ativa. Comando antigo não executa a nova tentativa; consultar histórico antes de reconhecer como obsoleto. Payload inválido não autoriza marcar um título arbitrário como falho; tratar como erro de contrato e alertar a operação.
+- Reconhecer consumo só após resultado/falha definitiva duráveis; não avançar offset sobre registros ainda pendentes da mesma partição. Banco indisponível impede confirmação. Falha após commit pode gerar reentrega, nunca novo efeito financeiro.
+- Erro definitivo só do título afetado; não atualizar os demais para `FAILED` nem apagar suas liquidações. Contadores e estado agregado são atualizados no commit individual, não por contagem em memória sujeita a corrida.
+- Snapshot novo somente em nova solicitação manual. Retry automático usa condições antigas; consultas externas não ocorrem dentro da transação financeira. Liquidação continua sendo registro de aquisição, sem transferência bancária real.
 
 ## Imutabilidade e privilégios
 
@@ -289,14 +354,14 @@ As credenciais de execução não podem ser proprietárias do schema/tabelas, ex
 | Grupo | Escritas permitidas às aplicações |
 |---|---|
 | `receivable`, `receivable_terms`, `exchange_rate` | Engine insere no fluxo autorizado; engine/worker leem. Não permitir atualização ou exclusão. |
-| `settlement`, `settlement_item` | Worker insere na liquidação; engine/worker leem. Não permitir atualização ou exclusão. |
+| `settlement` | Worker insere na liquidação; engine/worker leem. Não permitir atualização ou exclusão. |
 | `audit_event` | Engine/worker inserem e leem conforme seu papel. Não permitir atualização ou exclusão. |
 | `assignor` | Engine cadastra e altera campos autorizados, com exclusão lógica. Worker somente lê. |
 | `exchange_rate_proposal` | Engine cadastra e decide; conteúdo original permanece imutável. Worker não precisa escrever. |
-| `batch`, `settlement_request` | Engine cadastra/aceita; worker conclui ou registra falha/retry. Atualizar somente campos operacionais autorizados. |
-| `outbox_message` | Engine cria/libera e relay reivindica/publica; worker insere DLQ. Payload liberado e vínculos não podem mudar. |
+| `batch`, `settlement_request`, `settlement_request_item`, `receivable_processing` | Engine cadastra/aceita e registra falhas no aceite; worker conclui títulos ou registra falha/retry. Atualizar somente campos operacionais autorizados. |
+| `outbox_message` | Engine cria e relay reivindica/publica; worker insere DLQ. Payload e vínculos não podem mudar desde a inserção. |
 
-Aplicar grants por coluna e/ou triggers de proteção para campos imutáveis dentro de tabelas mutáveis. Validação de transições deve impedir reabertura de solicitações e propostas terminais, lotes liquidados e mensagens enviadas; conferir valores antigos e novos, não somente o domínio do `status`. A exceção operacional é o lote `FAILED`, que pode voltar a `PENDING` mediante uma nova solicitação, preservando a anterior. Não é necessário adicionar `date_updated` a tabelas imutáveis nem criar `deleted` em registros financeiros ou auditoria. Restrições de privilégios complementam FKs, unicidades, triggers e transações; nenhuma dessas camadas isoladamente substitui as demais.
+Aplicar grants por coluna e/ou triggers de proteção para campos imutáveis dentro de tabelas mutáveis. Validação de transições deve impedir reabertura de solicitações e propostas terminais, lotes liquidados e mensagens enviadas; conferir valores antigos e novos, não somente o domínio do `status`. Lotes `FAILED`/`PARTIALLY_SETTLED` e títulos falhos podem voltar a `PENDING` somente mediante nova solicitação/tentativa; preservar o histórico, sem reabrir tentativa terminal. Flags geradas nunca são alteradas diretamente. Não é necessário adicionar `date_updated` a tabelas imutáveis nem criar `deleted` em registros financeiros ou auditoria. Restrições de privilégios complementam FKs, unicidades, triggers e transações; nenhuma dessas camadas isoladamente substitui as demais.
 
 ## Índices e consultas previstas
 
@@ -308,17 +373,21 @@ PKs e restrições `UNIQUE` já fornecem seus índices; não criar cópias equiv
 | Títulos de um lote | `receivable(batch_uuid, uuid)`. |
 | Títulos por cedente | Prefixo do índice único `(assignor_uuid, type, external_reference)`; avaliar complemento somente com evidência de plano. |
 | Histórico de solicitações | `settlement_request(batch_uuid, date_register DESC, uuid DESC)`; índice único parcial garante uma pendente por lote. |
-| Condições por solicitação | Índice de `UNIQUE(request_uuid, receivable_uuid)`; `receivable_terms(receivable_uuid)` para acesso inverso. |
-| Liquidação por período | `settlement(settled_at DESC, uuid DESC)` e índices únicos de lote/solicitação. |
-| Itens do extrato | `settlement_item(settlement_uuid, payment_currency, uuid)` e índice único por recebível; filtrar cedente pelo recebível. |
+| Tentativas por solicitação | `settlement_request_item(request_uuid, status, receivable_uuid)`; unicidade solicitação/título. |
+| Histórico por título | `settlement_request_item(receivable_uuid, attempt_number DESC)`; ordinal único. |
+| Estados/erros por lote | `receivable(batch_uuid, uuid)` com join no estado por `UNIQUE(receivable_uuid)`; avaliar índice `(status, receivable_uuid)` conforme plano. |
+| Condições por tentativa | Índice único `receivable_terms(attempt_uuid)`. |
+| Liquidação por período | `settlement(settled_at DESC, uuid DESC)`; `UNIQUE(receivable_uuid)` protege o título. |
+| Totais por lote/solicitação | `settlement(batch_uuid, uuid)` e `settlement(request_uuid, uuid)`, sem unicidade nesses vínculos. |
+| Extrato por moeda | Avaliar `settlement(payment_currency, settled_at DESC, uuid DESC)`; cedente pelo recebível. |
 | Cotação vigente | Índice único `(base_currency, quote_currency, effective_from)`; selecionar maior vigência não futura e validar idade no aceite. |
 | Propostas pendentes | `exchange_rate_proposal(date_register, uuid) WHERE status = 'PENDING'`. |
 | Outbox elegível | `outbox_message(next_attempt_at, uuid) WHERE status = 'READY'`. |
 | Reivindicações expiradas | `outbox_message(claim_expires_at, uuid) WHERE status = 'CLAIMED'`. |
-| Outbox por lote | `outbox_message(batch_uuid, date_register, uuid)`; acesso por solicitação usa unicidade de solicitação/tópico. |
-| Auditoria por entidade | Índices parciais `(batch_uuid, date_register, uuid)`, `(request_uuid, date_register, uuid)`, `(assignor_uuid, date_register, uuid)`, `(proposal_uuid, date_register, uuid)` e `(exchange_rate_uuid, date_register, uuid)`, cada qual com referência não nula. |
+| Outbox por lote | `outbox_message(batch_uuid, date_register, uuid)`; acesso por tentativa usa unicidade de tentativa/tópico. |
+| Auditoria por entidade | Índices parciais `(batch_uuid, date_register, uuid)`, `(request_uuid, date_register, uuid)`, `(receivable_uuid, date_register, uuid)`, `(attempt_uuid, date_register, uuid)`, `(assignor_uuid, date_register, uuid)`, `(proposal_uuid, date_register, uuid)` e `(exchange_rate_uuid, date_register, uuid)`, cada qual com referência não nula. |
 
-Extrato usa apenas liquidações concluídas, período com início inclusivo/fim exclusivo em UTC e filtros de cedente/moeda aplicados aos itens no banco. Ordenação determinística por instante da liquidação e UUID; se houver múltiplos itens por liquidação, usar também UUID do item como desempate. Paginação segue a SPEC, sem carregar toda a base ou avançar páginas automaticamente. Índices e consultas devem ser medidos; esta documentação não comprova metas de desempenho.
+Extrato usa liquidações individuais confirmadas, inclusive de lotes pendentes/parciais, período com início inclusivo/fim exclusivo em UTC e filtros de cedente/moeda aplicados aos itens no banco. Ordenação determinística por instante individual da liquidação e UUID. Paginação segue a SPEC, sem carregar toda a base ou avançar páginas automaticamente. Índices e consultas devem ser medidos; esta documentação não comprova metas de desempenho.
 
 ## Migrations e critérios de verificação
 
@@ -328,9 +397,12 @@ Antes de afirmar conformidade da implementação, verificar com PostgreSQL real:
 
 - PKs, nulabilidade/defaults, FKs, valores permitidos, limites numéricos e referências cruzadas incorretas; tentar vincular lote, solicitação, condições e itens de fluxos diferentes.
 - Duplicidade de título por entradas/lotes distintos, inclusive após exclusão lógica do cedente; reutilização de chave em outro lote e concorrência com chaves iguais/diferentes.
-- Rollback integral ao falhar qualquer item; tentativa de commit com itens faltantes, totais incorretos ou sem auditoria; duplicidade após reentrega e após falha entre commit e confirmação Kafka.
+- Lote com dez títulos: um falha, nove liquidam e permanecem no extrato; lote parcial com contagens corretas. Falha local não desfaz commits anteriores nem impede os posteriores.
+- Dois títulos finalizando juntos, sucesso e falha concorrentes, contadores sem perda e estado terminal correto; conflito de agregado não classifica falha financeira.
+- Reprocessar somente um subconjunto de falhos com outro operador; novos snapshots, ordinal e justificativa preservados, erros antigos consultáveis, títulos já liquidados rejeitados; lote pode continuar parcial após solicitação bem-sucedida.
+- Tentar liquidar novamente por nova chave, mensagem antiga e reentrega após commit; unicidade por título e auditoria de sucesso única. Tentativa sem resultado/auditoria ou sucesso com erro deve falhar no commit.
 - Imutabilidade por operações diretas com credenciais de execução, incluindo campos de snapshot, inclusão tardia, alterações de histórico e exclusão/truncamento.
-- Câmbio no limite exato de 24 horas, futuro, expirado ou ausente; lote BRL sem câmbio; autoaprovação, decisão concorrente, empate de vigência e aprovação sem cotação/auditoria.
+- Câmbio no limite exato de 24 horas, futuro, expirado ou ausente; BRL prossegue com USD falho no mesmo lote; todos inválidos no aceite geram falhas auditadas sem comando; autoaprovação, decisão concorrente, empate de vigência e aprovação sem cotação/auditoria.
 - Recuperação de outbox reivindicada, falha após publicação, persistência do orçamento de retries após reinício, falha definitiva com DLQ e mensagem antiga após nova tentativa manual.
 - Cálculo e totais com golden cases, prazo zero, frações de mês, valores que arredondam para zero e overflow; filtros/paginação e planos de consulta com massa representativa.
 

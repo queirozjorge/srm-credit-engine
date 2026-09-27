@@ -1,5 +1,7 @@
 # Wireframes — SRM Credit Engine
 
+**Revisão contratual de 27/09/2026:** a SPEC agora exige liquidação por título, sucesso parcial, erro individual e reprocessamento auditado. As descrições/evidências da implementação anterior abaixo não comprovam esse fluxo; schemas, mocks, telas, infraestrutura e integração ainda precisam da adequação registrada na task 16 de [FRONTEND_TASKS.md](FRONTEND_TASKS.md).
+
 Protótipo navegável para revisar hierarquia, conteúdo e fluxos antes do desenvolvimento do frontend.
 
 O [mapa de telas e backlog do frontend](FRONTEND_TASKS.md) organiza a implementação em React/Material UI. Os [contratos propostos na SPEC](../SPEC.md#h-contratos-propostos-para-o-frontend-e-seus-mocks) orientam os mocks e a integração futura; ainda não há endpoints de negócio implementados. As adaptações documentadas no backlog prevalecem sobre comportamentos apenas demonstrativos deste protótipo.

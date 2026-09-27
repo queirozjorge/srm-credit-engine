@@ -1,6 +1,10 @@
 # Homologação do frontend — task 15
 
+**Revisão contratual de 27/09/2026:** a SPEC agora exige liquidação por título, sucesso parcial, erro individual e reprocessamento auditado. A adequação frontend das tasks 16.1–16.9 foi implementada e verificada com contratos, mocks e testes de UI, conforme [FRONTEND_TASKS.md](FRONTEND_TASKS.md). Isso não substitui a integração com APIs, banco, Kafka ou worker reais.
+
 **Homologação integrada pendente.** A entrega desta etapa cobre regressão do frontend, configuração de CI e documentação. Os impedimentos das tasks 13 e 14 continuam válidos: sessão autenticada real aguarda autorização de credenciais; APIs de negócio não estão implementadas. Não há evidência de liquidação financeira real.
+
+Na verificação da task 16.9, passaram 151 testes unitários em 39 arquivos, typecheck, lint, build e `git diff --check`. O Playwright não pôde ser executado localmente porque o binário Chromium exigido não está instalado; a CI remota também não foi executada. Assim, os cinco ciclos de abertura/fechamento foram verificados pelos testes de componentes, e não por navegador nesta rodada.
 
 ## Camadas de evidência
 
@@ -64,3 +68,14 @@ O build possui avisos conhecidos sobre anotações do Zod e chunk principal acim
 A captura do extrato revelou foco deslocado ao trocar o tamanho da página. Um teste de teclado reproduziu a falha em desktop e celular. O provedor comum de feedback passou a lembrar o controle anterior à lista temporária, restaurando foco no combobox após o loader. As opções da lista não são tratadas como destinos permanentes. Foram mantidos os ciclos existentes de modal, restauração de foco e avisos sobrepostos.
 
 Verificação final da task 15: tipagem, lint, build e 121 testes unitários aprovados. Após a correção de foco, passaram 80 cenários Chromium: 58 demonstrativos, 12 de componentes e dez de produção/OIDC contratual, em desktop e celular. Fluxos incluem cinco ciclos de modais/combobox, teclado, retorno de foco, zoom 200%, movimento reduzido, larguras de 320 a 1920 px e consultas no fuso de São Paulo com navegador em Los Angeles. Capturas de extrato e modal inspecionadas. Workflow validado como YAML; CI remota não executada. `git diff --check` sem erros. Avisos conhecidos do Zod e tamanho do bundle permanecem; homologação integrada continua bloqueada pelas tasks 13/14.
+
+## Critérios adicionais da revisão de 27/09/2026 — ainda não executados
+
+- Dez títulos: nove sucessos confirmados e um erro; resultado parcial explícito, nove registros no extrato e totais correspondentes no dashboard.
+- Detalhe com progresso por título, erro acessível em modal e histórico de tentativas sem sobrescrever falhas antigas.
+- Outro operador reprocessa somente o falho, com justificativa e nova chave; título já liquidado não pode ser selecionado/aceito. Reprocessamento de subconjunto pode deixar o lote parcial.
+- Falha de rede preserva chave, seleção e justificativa; polling atualiza somente a página visível após mudança de versão e mantém foco, filtros, seleção e scroll.
+- Novo snapshot em tentativa manual; mesmo snapshot em retries automáticos. BRL continua quando USD do mesmo lote falha no aceite.
+- Modais novos/refatorados passam por cinco ciclos, clique durante saída, teclado, foco restaurado e movimento reduzido. Testes de banco/Kafka comprovam unicidade, falha isolada, agregados concorrentes, mensagem antiga e auditoria completa.
+
+Execução depende da task 16 e dos serviços financeiros; esta revisão documental não constitui homologação.

@@ -1,8 +1,8 @@
 # SPEC — SRM Credit Engine
 
-**Decisões aprovadas em 25/09/2026 · Escopo Sênior · Status: estruturas frontend e backend executáveis, sem funcionalidades de negócio implementadas.**
+**Decisões iniciais aprovadas em 25/09/2026 · Revisão de liquidação em 27/09/2026 · Escopo Sênior. Backend financeiro ainda não implementado; frontend demonstrativo pendente de adequação à liquidação por título.**
 
-Este documento concentra as decisões, contratos e critérios de aceite do [desafio](desafio-tecnico-srm-credit-engine-v2.md). [README.md](README.md) apresenta o projeto; [AGENTS.md](AGENTS.md) define as convenções de implementação. A liquidação registra a aquisição antecipada do recebível pelo fundo; transferências bancárias reais e controle de saldo de caixa ficam fora desta entrega. O anexo reúne os detalhes técnicos complementares.
+Este documento concentra as decisões, contratos e critérios de aceite do [desafio](desafio-tecnico-srm-credit-engine-v2.md). [README.md](README.md) apresenta o projeto; [AGENTS.md](AGENTS.md) define as convenções de implementação. A liquidação registra a aquisição antecipada do recebível pelo fundo; transferências bancárias reais e controle de saldo de caixa ficam fora desta entrega. O anexo reúne os detalhes técnicos complementares. A revisão de 27/09/2026 substitui a liquidação tudo ou nada por lote por liquidação independente por título. O desafio original e registros de entregas anteriores permanecem referências históricas; este contrato prevalece na implementação.
 
 ## 1. Arquitetura, acesso e entrada
 
@@ -32,20 +32,21 @@ Taxas são frações decimais; validar valor de face positivo, moeda/tipo suport
 
 ## 3. Câmbio e aprovação
 
-Para USD, usar a cotação cadastrada mais recente cuja vigência tenha começado, com idade **menor ou igual a 24 horas**. Ausência ou expiração bloqueia o lote inteiro antes de liberar a outbox; lotes exclusivamente em BRL dispensam câmbio.
+Para USD, usar a cotação cadastrada mais recente cuja vigência tenha começado, com idade **menor ou igual a 24 horas**. Ausência ou expiração impede apenas o aceite financeiro dos títulos USD: registrar falha nesses itens e não criar seus comandos. Títulos BRL elegíveis do mesmo lote prosseguem. Lotes exclusivamente em BRL dispensam câmbio.
 
 O operador propõe ajuste positivo com justificativa. Outro usuário com papel de gestor aprova ou rejeita; registrar ambos, valores e horários. A aprovação cria nova cotação no cadastro geral, vigente naquele instante, preservando o histórico. O operador revisa a simulação e solicita novamente a liquidação; aprovação não enfileira automaticamente. Cotações novas não alteram snapshots aceitos ou liquidações. O provedor mockado fornece referência, com timeout/retry limitado, sem substituir a aprovação manual exigida.
 
-## 4. Outbox, idempotência e atomicidade
+## 4. Liquidação por título, outbox e idempotência
 
-1. **Cadastro:** gravar lote, recebíveis e outbox **bloqueada** na mesma transação. Nenhuma publicação nessa etapa.
-2. **Solicitação:** frontend informa somente UUID do lote e `Idempotency-Key`. Engine valida autorização, estado e condições, fixa o snapshot, registra a chave e libera a outbox na mesma transação. Responder `202` após commit.
-3. **Publicação:** relay por polling publica em `credit-lot` somente `{batchUuid, idempotencyKey}`, com UUID do lote como chave Kafka. Workers compartilham um consumer group; tratar entrega como pelo menos uma vez.
-4. **Liquidação:** conferir a solicitação ativa e gravar todos os itens financeiros, auditoria de sucesso e conclusão do lote em **uma transação PostgreSQL**. Erro em qualquer item provoca rollback de tudo. Confirmar o consumo após persistência do resultado ou do tratamento definitivo da falha.
+1. **Cadastro:** gravar lote, recebíveis, estados operacionais iniciais e auditoria na mesma transação. Cadastro continua integral: erro rejeita todos os itens. Não criar/publicar comandos de liquidação nessa etapa; a outbox passa a ser criada somente no aceite.
+2. **Solicitação inicial:** operador confirma o lote inteiro e envia `Idempotency-Key`. Engine valida JWT, papel, estado e idempotência, cria uma solicitação e uma tentativa por título. Regras financeiras são verificadas por item: os aptos recebem condições fixadas e estado `PENDING`; os inválidos recebem `FAILED`, código/mensagem e auditoria, sem comando Kafka. Falha de infraestrutura desfaz o aceite inteiro e retorna erro; nunca inventar aceite sem persistência. Gravar solicitação, tentativas, snapshots, outboxes dos aptos e auditoria no mesmo commit. Responder `202` após commit quando houver ao menos um título apto. Se todos falharem na validação financeira, persistir as tentativas/erros e auditoria, sem comandos, e retornar `422 NENHUM_TITULO_APTO` com `context.requestUuid`/`statusUrl` para consulta; não apresentar rejeição integral como sucesso.
+3. **Publicação:** um comando por título apto no tópico `credit-receivable`, com payload exato `{batchUuid, receivableUuid, requestUuid, idempotencyKey}` e chave Kafka igual a `receivableUuid`. Workers usam o mesmo consumer group e entrega pelo menos uma vez. `requestUuid` identifica a solicitação; o par solicitação/título identifica a tentativa. O tópico antigo `credit-lot` não faz parte do novo contrato.
+4. **Liquidação:** conferir a tentativa ativa do título e gravar seu resultado financeiro, auditoria de sucesso, conclusão da tentativa e atualização dos agregados em **uma transação PostgreSQL por título**. Falha provoca rollback somente desse processamento; não desfaz nem impede o processamento dos demais títulos. Confirmar o consumo somente após resultado ou falha definitiva persistidos.
+5. **Recuperação:** falhas transitórias permitem três repetições adicionais por tentativa/título, após 1, 5 e 15 segundos, com o mesmo snapshot. Falha definitiva marca somente o título com `FAILED` e `hasError=true`, preserva código, mensagem, etapa e horário e registra auditoria. O reprocessamento manual cria nova solicitação/tentativa para os títulos falhos selecionados, com nova chave, justificativa e novas condições financeiras. Nunca reenviar títulos já liquidados.
 
-O consumer group não garante sozinho efeito único no banco. Usar idempotência persistida, optimistic locking, resultado único por lote e liquidação única por recebível. Mesma chave/operação e mesmo lote retorna a operação existente; chave reutilizada para outro lote gera `409`. Chaves diferentes concorrendo pelo mesmo lote permitem apenas um aceite; demais recebem conflito. Lote concluído retorna o resultado existente.
+A proteção contra duplicidade combina identidade global do título (`cedente + tipo + referência externa`), `UNIQUE` de liquidação por recebível, idempotência persistida e optimistic locking. UUID na chave Kafka, consumer group e bloqueio de botão não substituem essas garantias. Uma reentrega após commit reconhece o resultado existente; não cria outra liquidação nem outro evento de sucesso.
 
-Falhas transitórias permitem três repetições adicionais, após 1, 5 e 15 segundos. Falha definitiva fica registrada e encaminhada para tratamento, sem liquidação parcial. Nova tentativa manual exige lote definitivamente falho, nova confirmação e nova chave, recalculando prazo e câmbio. Mensagens de tentativas antigas não executam a nova solicitação. Detalhes de recuperação e estados estão no anexo D.
+Nesta entrega, há no máximo uma solicitação `PENDING` por lote; títulos dessa solicitação podem ser processados por workers diferentes. Nova seleção manual aguarda seu encerramento, sem impedir a conclusão dos demais títulos. A restrição reduz concorrência na seleção e não impõe uma transação financeira por lote. Qualquer `OPERADOR` autorizado pode reprocessar, inclusive diferente do solicitante original. Estados, conflito e auditoria estão no anexo D.
 
 ## 5. Persistência, API e interface
 
@@ -60,7 +61,7 @@ Simulação e atualização periódica de status não bloqueiam a tela. Operaç�
 | Área | Critério verificável na implementação |
 |---|---|
 | Precisão | C1 **R$ 92.859,94**, C2 **R$ 23.337,77**, C3 **US$ 17.094,67**, com as premissas fixas do desafio; testar frações de mês e arredondamento |
-| Integridade | Concorrência entre operadores, chaves iguais/diferentes, reentrega Kafka e falha após commit produzem um único resultado; falha de um item deixa zero liquidações do lote |
+| Integridade | Concorrência entre operadores, chaves iguais/diferentes, reentrega Kafka e falha após commit produzem uma única liquidação por título; falha de um item preserva os sucessos dos demais; reprocessar somente falhos não altera liquidações anteriores e preserva toda a auditoria |
 | Entrada | Formulário/CSV/CNAB equivalentes produzem os mesmos dados; rejeitar arquivo inválido, duplicidade, lote vazio ou acima de 1.000 itens |
 | Segurança | Negar JWT inválido, acesso sem papel e autoaprovação; cotação vencida impede USD; auditoria registra condições e responsáveis sem tokens |
 | Usabilidade | Fluxo completo por teclado, sem perder estado; simulação ignora respostas antigas; botão bloqueado durante envio e estado assíncrono visível |
@@ -77,7 +78,7 @@ Simulação e atualização periódica de status não bloqueiam a tela. Operaç�
 - `OPERADOR`: cadastros, simulação, consulta de lotes, liquidação e proposta cambial. `GESTOR`: consultas, cadastro/edição de cedentes e decisão cambial. A permissão de manter cedentes não autoriza o gestor a cadastrar lotes, executar simulações ou solicitar liquidações. Um usuário pode ter ambos os papéis, mantendo a proibição de autoaprovação. Matriz detalhada no anexo H.2, alinhada ao wireframe em 26/09/2026.
 - A identidade auditada deriva de `iss` + `sub` validados, nunca do body. Não registrar JWT, senhas ou arquivos integrais em logs.
 - Aceitar apenas algoritmos de assinatura permitidos. Chave JWKS conhecida em cache pode ser utilizada conforme sua validade; não conseguir obter uma chave desconhecida impede autenticação.
-- Worker e relay usam credenciais técnicas. O worker exige solicitação autorizada e ativa no banco; a mensagem sozinha não autoriza liquidação. A expiração posterior do token do operador não cancela o aceite já persistido.
+- Worker e relay usam credenciais técnicas. O worker exige solicitação autorizada e tentativa ativa para o título no banco; a mensagem sozinha não autoriza liquidação. A expiração posterior do token do operador não cancela o aceite já persistido.
 - Engine implementa simulação e validação do aceite; worker implementa cálculo e liquidação pelo snapshot. Cada um mantém motor e testes próprios. Alterações preservam compatibilidade de mensagens, schema e regras. O worker verifica o schema antes de consumir; não realiza chamadas externas dentro da transação financeira.
 
 ### B. Formatos de entrada
@@ -102,52 +103,69 @@ Selecionar a maior vigência não futura e impedir empate de vigência para o me
 
 No provedor mockado, timeout de 2 segundos por chamada e até duas repetições adicionais, após 500 ms e 1 segundo, somente para falhas transitórias. Consultar fora da transação financeira. Indisponibilidade deve ser informada e não impede uma proposta preenchida manualmente nem o uso de cotação válida já cadastrada. O mock não publica cotação automaticamente.
 
-### D. Estados, publicação e recuperação
+### D. Estados, publicação, recuperação e auditoria
 
-| Estado do lote | Significado |
+| Estado atual do título | Significado |
 |---|---|
-| `READY` | Cadastro concluído; outbox bloqueada. |
-| `PENDING` | Solicitação aceita: aguardando publicação, na fila ou em processamento. |
-| `SETTLED` | Todos os efeitos financeiros confirmados. |
-| `FAILED` | Falha definitiva registrada, sem liquidações do lote. |
+| `READY` | Cadastrado; ainda não solicitado. |
+| `PENDING` | Tentativa aceita, aguardando publicação, consumo ou repetição automática. |
+| `SETTLED` | Liquidação confirmada; terminal, nunca reprocessável. |
+| `FAILED` | Tentativa encerrada com erro; nenhuma liquidação para este título. |
 
-A outbox inicial `BLOCKED` ainda não tem chave de solicitação nem comando publicável. No aceite, vincular a solicitação ativa, registrar o snapshot e preparar/liberar a outbox como `READY`; o payload fica imutável. UUIDs são gerados no backend.
+`hasError` é a flag de erro atual, derivada de `status == FAILED`; não é um booleano editável pelo cliente. `failure = { code, message, stage, occurredAt }` é obrigatório em `FAILED`, nulo nos demais estados; `stage` é `ACCEPTANCE` ou `PROCESSING`. Mensagem é segura em pt-BR; diagnóstico técnico e stack trace permanecem nos logs. A falha anterior continua no histórico quando uma nova tentativa coloca o título em `PENDING` ou o conclui. Repetição automática permanece `PENDING` e não libera ação manual.
 
-O relay reivindica registros publicáveis com controle de concorrência e prazo de recuperação. Só marca `SENT` após confirmação do broker. Reivindicações abandonadas expiram; falhas mantêm a mensagem recuperável. Falhar entre publicação e marcação pode repetir a entrega, sem repetir a liquidação. Não descartar comandos após esgotar tentativas de envio.
+| Estado do lote | Regra de agregação sobre o estado atual de todos os títulos |
+|---|---|
+| `READY` | Todos ainda `READY`; cadastro sem solicitação. |
+| `PENDING` | Há pelo menos um título `PENDING`, mesmo com sucessos ou falhas já persistidos. |
+| `SETTLED` | Todos `SETTLED`. |
+| `PARTIALLY_SETTLED` | Nenhum pendente; pelo menos um `SETTLED` e um `FAILED`. |
+| `FAILED` | Nenhum pendente e todos `FAILED`. |
 
-Processar ordenadamente por partição. A proteção PostgreSQL permanece necessária em rebalances, instâncias antigas e reentregas após commit, conforme as [garantias do Kafka](https://kafka.apache.org/41/design/design/). A chave de idempotência tem escopo global por operação, não por operador; preservar a associação ao lote durante todo o ciclo de vida financeiro.
+A solicitação agrega apenas seus itens: `PENDING` enquanto houver pendente; `SETTLED` se todos tiveram sucesso; `PARTIALLY_SETTLED` se terminou com sucessos e falhas; `FAILED` se todos falharam. Solicitação terminal nunca reabre. O lote agrega o histórico atual de todos os títulos: uma nova solicitação pode terminar `SETTLED` e o lote continuar `PARTIALLY_SETTLED` se restarem falhos não selecionados. A solicitação inicial inclui todos os títulos; por isso não há mistura posterior com `READY`. Atualizar contadores/estados com controle de concorrência, sem perdas quando dois títulos terminarem simultaneamente.
+
+Cada título apto cria uma outbox `READY` no aceite, com vínculo à solicitação/título e payload imutável. Não existe outbox `BLOCKED` no novo fluxo. O relay reivindica registros com token e prazo de recuperação, marca `SENT` somente após confirmação do broker e recupera reivindicações expiradas. Publicação repetida após falha é possível; não descartar comandos por limite de envio.
+
+Configurar produtor com `enable.idempotence=true`, `acks=all`, retries habilitados e `max.in.flight.requests.per.connection <= 5`. Isso protege as repetições internas do produtor, não republicações da outbox nem solicitações de operadores diferentes. Consumer usa `enable.auto.commit=false` e confirmação após persistência. Não confirmar offsets além de registros anteriores ainda não tratados na mesma partição. As [garantias do Kafka](https://kafka.apache.org/41/design/design/) não tornam o commit PostgreSQL parte de uma transação Kafka. O broker local único continua sem alta disponibilidade; configurações adicionais de produção não substituem idempotência no banco.
+
+A chave de idempotência tem escopo global por operação `SETTLEMENT`, sem incluir operador. Persistir fingerprint de lote, modalidade (`INITIAL` ou `REPROCESS`), seleção ordenada e justificativa normalizada. A primeira solicitação sem body resolve todos os títulos; a seleção de reprocessamento é explícita, sem repetidos. Manter a associação durante todo o ciclo financeiro. Consultar a chave existente antes de revalidar estados ou recalcular condições.
 
 | Requisição | Resposta |
 |---|---|
-| Mesma chave/lote pendente | `202`, operação existente, sem novo comando. |
-| Mesma chave/lote concluído ou falho | `200`, estado/resultado existente, sem reexecução. |
-| Mesma chave para outro lote | `409`. |
-| Outra chave/lote pendente | `409`, com referência à operação ativa. |
-| Outra chave/lote concluído | `200`, resultado existente. |
-| Nova chave/lote definitivamente falho | Novo aceite conforme a seção 4, com nova solicitação e outbox. |
+| Mesma chave e fingerprint; solicitação pendente | `202`, operação existente, sem novos comandos. |
+| Mesma chave e fingerprint; solicitação terminal após aceite financeiro | `200`, operação existente, inclusive falhas e sucessos parciais; sem reexecução. |
+| Mesma chave e fingerprint; todos rejeitados no aceite | Repetir `422 NENHUM_TITULO_APTO` e referência à solicitação/erros persistidos; sem revalidar nem criar tentativas. |
+| Mesma chave para outro lote, seleção, modalidade ou justificativa | `409 CHAVE_IDEMPOTENCIA_REUTILIZADA`. |
+| Nova chave enquanto houver solicitação pendente no lote | `409 LOTE_EM_PROCESSAMENTO`, com referência à operação ativa. |
+| Nova chave para solicitação inicial de lote `SETTLED` | `200`, última solicitação; consultar detalhe para totais acumulados do lote, sem nova execução. |
+| Solicitação inicial repetida em lote `FAILED`/`PARTIALLY_SETTLED` | `409 REPROCESSAMENTO_EXIGE_SELECAO`; não reenviar automaticamente todo o lote. |
+| Reprocessamento explícito de 1–1.000 títulos, todos `FAILED`, sem solicitação pendente | Novo aceite com nova chave, justificativa e snapshots apenas para os selecionados: `202` se algum apto; `422` com histórico persistido se nenhum apto. |
+| Seleção contém título de outro lote, já liquidado, `READY` ou não falho | Rejeitar a seleção inteira com `409 TITULO_NAO_REPROCESSAVEL`, sem criar tentativas; formato/UUID repetido gera `400`. |
 
-Após conflito otimista ou de unicidade, reler o estado: conclusão por outro worker é resultado existente, não falha. Conferir a solicitação ativa dentro do controle de versão da transação. Mensagem antiga é ignorada com diagnóstico e não pode modificar a nova tentativa.
+Reprocessamento manual recalcula prazo/câmbio e revalida cada selecionado: título vencido ou USD sem cotação válida continua falho, com uma nova tentativa de validação auditada; não editar título ou resultado para contornar a regra. Seleção inválida, autenticação e indisponibilidade são erros HTTP, não tentativas financeiras aceitas.
 
-Persistir a contagem de repetições por solicitação para que reinícios não renovem seu orçamento. Após rollback e falha definitiva, uma transação separada, condicionada à solicitação ainda ativa e não concluída, registra `FAILED`, diagnóstico/auditoria e outbox para `credit-lot.dlq`. Só então reconhecer o comando original. A DLQ usa os mesmos dois identificadores; detalhes do erro ficam no banco.
+Persistir o orçamento de retries por par solicitação/título, reservando a repetição antes de executar em transação operacional separada. Reinícios não zeram orçamento; reentrega não cria novo orçamento. Registrar cada falha transitória e repetição agendada com ordinal e correlação. Após rollback financeiro e falha definitiva, transação separada confere tentativa ainda ativa, grava `FAILED`, diagnóstico seguro, auditoria, agregados e outbox `credit-receivable.dlq`. A DLQ tem os mesmos quatro identificadores; erro detalhado fica no banco. Rejeições financeiras no aceite já são auditadas e não entram na DLQ, pois não houve consumo.
 
-Se o banco não permitir nem persistir a falha, não reconhecer o comando nem anunciar falha definitiva. Pausar/recuperar o consumo e sinalizar indisponibilidade. Condições aceitas permanecem válidas nas repetições automáticas, inclusive se a cotação envelhecer ou o vencimento passar durante a espera.
+Conflitos de versão/unicidade exigem rollback e releitura: sucesso concorrente é resultado existente, não falha. Mensagem de tentativa antiga é reconhecida como obsoleta após conferir o histórico persistido e não pode executar nem marcar a nova tentativa como falha. Nunca simplesmente substituir sua chave pela atual. Se o banco não permitir conferir resultado ou persistir falha, não reconhecer o comando; recuperar o consumo e sinalizar indisponibilidade. Conflitos de agregação não devem consumir orçamento de falhas financeiras nem classificar outro título como falho.
+
+Auditoria é imutável e registra cadastro, aceite inicial, reprocessamento manual (operador autenticado, justificativa, seleção e vínculo às tentativas anteriores), condições fixadas por título, falhas de validação, repetições automáticas, falha definitiva e sucesso. Identificar lote, título, solicitação/tentativa, ordinal, instante, ator humano/técnico e correlação conforme o evento. Cada título tem exatamente um evento de sucesso por liquidação; cada tentativa terminal tem um único desfecho. Nova tentativa não apaga erros, condições ou responsáveis anteriores. Consulta paginada por título e lote permite reconstruir a sequência, sem edição ou exclusão de auditoria.
 
 ### E. Contratos HTTP e acompanhamento
 
 OpenAPI deve cobrir prévia/importação, criação de lotes, simulação, cedentes, consultas, extrato e propostas/decisões cambiais.
 
-- `POST /batches/{batchUuid}/settlements`: cabeçalho `Idempotency-Key`, sem body financeiro; devolver lote, identificação da solicitação, estado e localização de consulta.
-- `GET /batches/{batchUuid}`: estado e operação ativa. A consulta individual da solicitação preserva seu histórico após novas tentativas.
+- `POST /batches/{batchUuid}/settlements`: cabeçalho `Idempotency-Key`; sem body na primeira solicitação; reprocessamento envia apenas seleção de UUIDs e justificativa conforme H.6. Nunca receber valores financeiros. Devolver solicitação, contagens, estado e localização de consulta.
+- `GET /batches/{batchUuid}`: estado agregado, contagens por título, totais confirmados e solicitação ativa/última. Consultas paginadas de títulos e auditoria preservam o histórico após novas tentativas.
 - Além dos códigos da seção 5, usar `400` para formato inválido, `401` para autenticação inválida, `403` para permissão insuficiente, `413` para arquivo acima do limite, `422` para regra/dado inválido e `204` para sucesso sem conteúdo. Erros incluem código estável, mensagem e detalhes aplicáveis, sem stack trace.
-- Extrato: início inclusivo/fim exclusivo, convertidos do calendário local para UTC; somente liquidações concluídas. Filtrar cedente/moeda nos itens, não apenas no cabeçalho do lote. SQL otimizado, 20 itens por página, máximo de 100 e ordenação por instante/UUID.
+- Extrato: início inclusivo/fim exclusivo, convertidos do calendário local para UTC; somente títulos com liquidação confirmada, inclusive quando o lote estiver pendente, parcial ou contiver falhas. Filtrar cedente/moeda nos itens. SQL otimizado, 20 itens por página, máximo de 100 e ordenação por instante/UUID.
 - Simulação: debounce de 400 ms, cancelando ou ignorando respostas antigas. Valores são indicativos; condições finais são fixadas no aceite e apresentadas no acompanhamento.
 - Status: consultar a cada 5 segundos enquanto pendente, sem sobreposição; interromper em estado terminal, saída da tela, aba oculta ou sessão inválida. Não repetir o mesmo modal de erro em cada consulta.
 
 ### F. Verificação e entregáveis
 
-Para os golden cases, 90 e 60 dias correspondem a 3 e 2 meses. Cada projeto testa seu motor com as entradas/saídas do desafio, sem depender da data corrente, e cobre frações de mês, prazo zero, overflow e arredondamento. Testes integrados usam PostgreSQL/Kafka compatíveis com o ambiente para demonstrar rollback, concorrência, reentrega e recuperação; incluir aprovação cambial concorrente e fronteira exata de 24 horas.
+Para os golden cases, 90 e 60 dias correspondem a 3 e 2 meses. Cada projeto testa seu motor com as entradas/saídas do desafio, sem depender da data corrente, e cobre frações de mês, prazo zero, overflow e arredondamento. Testes integrados usam PostgreSQL/Kafka compatíveis com o ambiente para demonstrar rollback isolado por título, preservação dos demais sucessos, reprocessamento seletivo, auditoria completa, concorrência, reentrega e recuperação; incluir aprovação cambial concorrente e fronteira exata de 24 horas.
 
-As metas da seção 6 usam ambiente de referência Docker com 4 vCPU e 8 GiB disponíveis, banco pré-carregado, aplicações aquecidas e um lote em processamento por vez. Carga HTTP: 5 solicitações/s por 5 minutos, após 1 minuto de aquecimento. Tempo do lote conta do início do processamento ao commit; medir espera em fila separadamente. Registrar ambiente, massa e resultados antes de afirmar atendimento.
+As metas da seção 6 usam ambiente de referência Docker com 4 vCPU e 8 GiB disponíveis, banco pré-carregado, aplicações aquecidas e um lote em processamento por vez. Carga HTTP: 5 solicitações/s por 5 minutos, após 1 minuto de aquecimento. Tempo do lote conta do início do processamento até todos os títulos da solicitação atingirem estado terminal; medir espera em fila separadamente. Registrar ambiente, massa e resultados antes de afirmar atendimento.
 
 Além da contagem de liquidações e latência, observar idade da outbox, falhas e mensagens na DLQ. Logs estruturados preservam causa/stack trace e correlação. Validar navegação por teclado, estado preservado e modais conforme AGENTS.md.
 
@@ -172,7 +190,7 @@ O README descreve comandos de execução e diagnóstico. [DECISIONS.md](DECISION
 
 ### H. Contratos propostos para o frontend e seus mocks
 
-**Task 01 · 26/09/2026 · Contratos definidos para implementação, ainda sem endpoints de negócio implementados.** Este anexo é a fonte dos contratos para os futuros tipos TypeScript, schemas de validação, mocks HTTP e OpenAPI do engine. Não representa uma API disponível. As regras financeiras e de idempotência dos anexos anteriores permanecem válidas; alterações futuras devem atualizar mocks, consumidores e documentação em conjunto. O [mapa de telas e backlog](docs/FRONTEND_TASKS.md) acompanha a execução, sem substituir estes contratos.
+**Task 01 · 26/09/2026 · Contratos revisados em 27/09/2026 para liquidação por título; adequação dos schemas/mocks/telas pendente, ainda sem endpoints de negócio implementados.** Este anexo é a fonte dos contratos para os futuros tipos TypeScript, schemas de validação, mocks HTTP e OpenAPI do engine. Não representa uma API disponível. As regras financeiras e de idempotência dos anexos anteriores permanecem válidas; alterações futuras devem atualizar mocks, consumidores e documentação em conjunto. O [mapa de telas e backlog](docs/FRONTEND_TASKS.md) acompanha a execução, sem substituir estes contratos.
 
 #### H.1. Convenções de transporte
 
@@ -186,16 +204,16 @@ O README descreve comandos de execução e diagnóstico. [DECISIONS.md](DECISION
 - Campos obrigatórios não aceitam `null`. Nulabilidade aparece explicitamente nos contratos abaixo. Campos opcionais podem ser omitidos; em `PATCH`, omissão preserva o valor e `null` não apaga campos obrigatórios. Rejeitar campos de entrada não previstos com `400`, inclusive dados financeiros enviados na solicitação de liquidação.
 - `201` devolve identificação do recurso e `Location` pública sob `/api`; `204` não possui body. Mutações não têm retry automático genérico. Após sucesso, uma consulta atualiza a visão afetada; outras consultas em cache são marcadas como desatualizadas, sem disparar refetches em cascata.
 
-Erros do engine seguem `ApiError = { code: string, message: string, details?: FieldIssue[], context?: { batchUuid?: string, requestUuid?: string, statusUrl?: string } }`, com `FieldIssue = { code: string, message: string, field?: string, itemIndex?: number, line?: number }`. `itemIndex` começa em 0; `line` é a linha física do arquivo, começando em 1. Caminhos de campo usam notação como `items[0].faceValueBrl`. Mensagens são pt-BR, sem stack trace. Erros do gateway podem conter somente `code` e `message`, conforme G.
+Erros do engine seguem `ApiError = { code: string, message: string, details?: FieldIssue[], context?: { batchUuid?: string, requestUuid?: string, receivableUuid?: string, statusUrl?: string } }`, com `FieldIssue = { code: string, message: string, field?: string, itemIndex?: number, line?: number }`. `itemIndex` começa em 0; `line` é a linha física do arquivo, começando em 1. Caminhos de campo usam notação como `items[0].faceValueBrl`. Mensagens são pt-BR, sem stack trace. Erros do gateway podem conter somente `code` e `message`, conforme G.
 
 | HTTP | Códigos iniciais / tratamento |
 |---|---|
 | `400` | `REQUISICAO_INVALIDA`, `PAGINACAO_INVALIDA`: formato, campo ou enum inválido. |
 | `401` / `403` | `SESSAO_INVALIDA` / `ACESSO_NEGADO`; `AUTOAPROVACAO_PROIBIDA` na decisão pela própria identidade. |
 | `404` | `RECURSO_NAO_ENCONTRADO`, `ROTA_INEXISTENTE`; não usar para consultas vazias. |
-| `409` | `DOCUMENTO_DUPLICADO`, `RECEBIVEL_DUPLICADO`, `VERSAO_DESATUALIZADA`, `PROPOSTA_JA_DECIDIDA`, `LOTE_EM_PROCESSAMENTO`, `CHAVE_IDEMPOTENCIA_REUTILIZADA`. Conflito de lote pendente inclui referência à operação ativa em `context`. |
+| `409` | `DOCUMENTO_DUPLICADO`, `RECEBIVEL_DUPLICADO`, `VERSAO_DESATUALIZADA`, `PROPOSTA_JA_DECIDIDA`, `LOTE_EM_PROCESSAMENTO`, `CHAVE_IDEMPOTENCIA_REUTILIZADA`, `REPROCESSAMENTO_EXIGE_SELECAO`, `TITULO_NAO_REPROCESSAVEL`. Conflito de lote pendente inclui referência à operação ativa em `context`. |
 | `413` | `ARQUIVO_MUITO_GRANDE`; gateway pode emitir o código próprio definido em G. |
-| `422` | `DADOS_INVALIDOS`, `ARQUIVO_INVALIDO`, `COTACAO_AUSENTE`, `COTACAO_EXPIRADA`, `VENCIMENTO_INVALIDO`, `LIMITE_NUMERICO_EXCEDIDO`; detalhes quando houver campo/linha identificável. |
+| `422` | `DADOS_INVALIDOS`, `ARQUIVO_INVALIDO`, `COTACAO_AUSENTE`, `COTACAO_EXPIRADA`, `VENCIMENTO_INVALIDO`, `LIMITE_NUMERICO_EXCEDIDO`, `NENHUM_TITULO_APTO`; detalhes quando houver campo/linha identificável. |
 | `503` | `REFERENCIA_CAMBIAL_INDISPONIVEL`, quando o provedor não responder após a política do anexo C. |
 | `500` | `ERRO_INTERNO`: mensagem segura e causa registrada no servidor. Falha nunca é convertida em sucesso. |
 
@@ -207,11 +225,11 @@ Todas as operações de negócio exigem JWT válido e pelo menos um papel reconh
 
 | Operação | OPERADOR | GESTOR |
 |---|---|---|
-| Dashboard, cedentes, lotes, recebíveis, solicitações e extrato | Sim | Sim |
+| Dashboard, cedentes, lotes, recebíveis, solicitações, auditoria e extrato | Sim | Sim |
 | Consultar câmbio, referência, propostas e cotações | Sim | Sim |
 | Cadastrar e editar cedente | Sim | Sim |
 | Prévia/importação, cadastro de lote e simulação | Sim | Não |
-| Solicitar liquidação e nova tentativa manual | Sim | Não |
+| Solicitar liquidação e reprocessar títulos falhos com justificativa | Sim | Não |
 | Propor cotação | Sim | Não |
 | Aprovar/rejeitar proposta de outra identidade | Não | Sim |
 
@@ -234,15 +252,17 @@ Documento é imutável na edição. Uma edição atualiza apenas o nome, com ver
 
 `ReceivableInput = { assignorUuid, externalReference, type, faceValueBrl, dueDate, paymentCurrency }`, com `type` em `DUPLICATA_MERCANTIL | CHEQUE_PRE_DATADO` e `paymentCurrency` em `BRL | USD`. Não aceitar taxas, resultados, identidade do usuário ou UUID de novo recebível. Usar as normalizações e limites dos anexos B e C.
 
-`BatchSummary = { uuid, source, status, itemCount: number, assignorCount: number, soleAssignor: { uuid, name } | null, faceValueBrl, registeredAt }`. `source` é `FORM | CSV | CNAB`; estados conforme D. `soleAssignor` só existe quando há exatamente um cedente; para vários, mostrar a contagem, sem atribuir o lote ao primeiro cedente. Exibir UUID como identificador, com quebra de linha/cópia quando necessário; códigos `LT-181` são exclusivos do protótipo.
+`BatchSummary = { uuid, source, status, itemCount: number, assignorCount: number, soleAssignor: { uuid, name } | null, faceValueBrl, registeredAt, counts: ItemCounts }`. `source` é `FORM | CSV | CNAB`; estados conforme D. `soleAssignor` só existe quando há exatamente um cedente; para vários, mostrar a contagem, sem atribuir o lote ao primeiro cedente. Exibir UUID como identificador, com quebra de linha/cópia quando necessário; códigos `LT-181` são exclusivos do protótipo.
 
-`BatchDetail` acrescenta a `BatchSummary` os campos `createdBy: Actor`, `activeRequest: SettlementRequest | null`, onde `Actor = { issuer: string, subject: string }`. Não carregar todos os títulos em cada consulta periódica. `Receivable` contém `uuid`, os campos de `ReceivableInput` e `assignorName`.
+`ItemCounts = { ready: number, pending: number, settled: number, failed: number }`; soma igual à quantidade de títulos do lote ou da seleção da solicitação. `BatchDetail` acrescenta a `BatchSummary` `createdBy: Actor`, `activeRequest: SettlementRequest | null` (solicitação atual ou última terminal), `settledTotals: FinancialTotals` e `progressVersion: string`, versão monotônica incrementada a cada mudança operacional de título. `Actor = { issuer: string, subject: string }`. Não carregar todos os títulos no polling do detalhe.
+
+`Receivable` contém `uuid`, campos de `ReceivableInput`, `assignorName` e `processing: { status, hasError: boolean, failure: ItemFailure | null, activeRequestUuid: string | null, attemptNumber: number, settlementUuid: string | null }`, conforme D. `attemptNumber` é zero em `READY` e cresce por solicitação manual, não por retry automático. `settlementUuid` só existe em `SETTLED`. Dados financeiros originais continuam imutáveis; estado operacional é separado.
 
 | Operação | Entrada | Resposta |
 |---|---|---|
 | `GET /batches` | `q?` por UUID ou nome de qualquer cedente do lote, `status?`, `page`, `size`. Filtro por cedente seleciona lotes, sem reduzir seus totais. | `200 Page<BatchSummary>` |
 | `GET /batches/{batchUuid}` | UUID. | `200 BatchDetail`; preserva estado/operação ativa exigidos em E. |
-| `GET /batches/{batchUuid}/receivables` | `page`, `size`; ordem fixa por UUID crescente. | `200 Page<Receivable>` |
+| `GET /batches/{batchUuid}/receivables` | `page`, `size`, `status?`; ordem fixa por UUID crescente; filtro executado no banco. | `200 Page<Receivable>` |
 | `POST /batches/preview` | `multipart/form-data`: `file` e `format` (`CSV` ou `CNAB`). | `200 ImportPreview` válida; `422` inválida, `413` acima do limite. |
 | `POST /batches` — manual | `application/json`: `{ items: ReceivableInput[] }`. Origem `FORM` definida pelo servidor. | `201 { uuid, status: "READY" }`, `Location: /api/batches/{uuid}` |
 | `POST /batches` — arquivo | `multipart/form-data`: arquivo original `file`, `format`, e parte JSON `paymentCurrencies?: { itemIndex: number, paymentCurrency: "BRL" \| "USD" }[]` somente para CNAB. | Mesmo `201`; servidor relê/valida o arquivo, aplica escolhas CNAB e cadastra atomicamente. |
@@ -257,33 +277,44 @@ No cadastro definitivo, repetir todas as validações, inclusive duplicidades e 
 
 | Operação | Entrada | Resposta |
 |---|---|---|
-| `POST /simulations` | União exclusiva `{ batchUuid }` ou `{ items: ReceivableInput[] }`; rascunho limitado a 1–1.000 itens. Sem datas de cálculo, taxas ou câmbio fornecidos pelo cliente. | `200 Simulation`; inválida/bloqueada retorna `422 ApiError`. Nenhuma persistência financeira. |
+| `POST /simulations` | União exclusiva `{ batchUuid, receivableUuids?: string[] }` ou `{ items: ReceivableInput[] }`; seleção explícita para simular reprocessamento de falhos, sem repetidos e pertencente ao lote; rascunho limitado a 1–1.000 itens. Sem datas de cálculo, taxas ou câmbio fornecidos pelo cliente. | `200 Simulation`; inválida/bloqueada retorna `422 ApiError`. Nenhuma persistência financeira. |
 
 `Simulation = { calculatedAt, calculationDate, indicative: true, calculationVersion, baseRate, exchangeRate: ExchangeQuote | null, totals: FinancialTotals, items: SimulationItem[] }`.
 
 `FinancialTotals = { faceValueBrl, presentValueBrl, discountBrl, paymentBrl, paymentUsd }`, todos strings monetárias, incluindo `"0.00"` quando não houver pagamentos em uma moeda. `SimulationItem = { itemIndex: number, receivableUuid?: string, days: number, spread, termMonths, presentValueBrl, discountBrl, paymentCurrency, paymentValue }`. `termMonths` é decimal textual de prazo, não uma taxa limitada a 12 casas; o backend aplica a precisão definida na seção 2. Para lote cadastrado, itens seguem UUID crescente e incluem `receivableUuid`; para rascunho, seguem a ordem recebida.
 
+Para lote `READY`, ausência de seleção simula todos; em `FAILED`/`PARTIALLY_SETTLED`, exigir seleção dos falhos a reprocessar. Não incluir títulos já liquidados nem simular o lote pendente. Falha de simulação não persiste erro operacional; o aceite revalida itens independentemente e pode registrar falhas individuais, conforme D. A UI não pode exigir simulação integralmente bem-sucedida para permitir envio: na confirmação, informar que itens inválidos serão sinalizados e apenas os aptos seguirão. Não apresentar estimativas inválidas como valores aprovados.
+
 Debounce de 400 ms em edição válida; cancelar/ignorar respostas antigas e manter os dados anteriores identificados como desatualizados enquanto a consulta atual não conclui. Não mostrar dados anteriores como uma simulação válida após erro. O gestor consulta resultados aceitos, mas não dispara esta operação. Mocks usam resultados determinísticos por cenário; não portar o motor demonstrativo do HTML para produção.
 
-#### H.6. Solicitações, resultado e extrato — domínio frontend `settlement`
+#### H.6. Solicitações, títulos, reprocessamento, auditoria e extrato — domínio frontend `settlement`
 
 | Operação | Entrada | Resposta |
 |---|---|---|
-| `POST /batches/{batchUuid}/settlements` | `Idempotency-Key` obrigatório; sem body financeiro, conforme E. | `202 SettlementRequest` no aceite/pendência ou `200 SettlementRequest` para resultado existente, conforme D. `Location` aponta para `statusUrl`. |
-| `GET /batches/{batchUuid}/settlements` | `page`, `size`. | `200 Page<SettlementRequest>`; histórico preservado após novas tentativas. |
+| `POST /batches/{batchUuid}/settlements` | `Idempotency-Key` obrigatório. Inicial: sem body, todos os títulos do lote `READY`. Reprocessamento: `{ receivableUuids: string[], reason: string }`, 1–1.000 UUIDs distintos de falhos do mesmo lote e justificativa após trim de 1–500 caracteres. Sem condições financeiras ou identidade no body. | `202 SettlementRequest` em aceite/pendência com títulos aptos; `200` para solicitação existente terminal conforme D; `422 ApiError` com referência ao histórico se todos falharem no aceite. `Location` aponta para `statusUrl`. |
+| `GET /batches/{batchUuid}/settlements` | `page`, `size`. | `200 Page<SettlementRequest>`; todas as solicitações anteriores preservadas. |
 | `GET /settlement-requests/{requestUuid}` | UUID. | `200 SettlementRequest` ou `404`. |
-| `GET /settlement-requests/{requestUuid}/items` | `page`, `size`; UUID do recebível crescente. | `200 Page<SettlementRequestItem>` com condições fixadas e resultados quando concluído. |
-| `GET /settlements/items` | `start?`, `end?` em UTC, `assignorUuid?`, `paymentCurrency?`, `page`, `size`. | `200 Page<StatementItem>` somente de liquidações concluídas. |
+| `GET /settlement-requests/{requestUuid}/items` | `page`, `size`, `status?`; UUID do recebível crescente. | `200 Page<SettlementRequestItem>`; status histórico da tentativa, condições, erro e resultado individual. |
+| `GET /batches/{batchUuid}/audit-events` | `page`, `size`, `receivableUuid?`; instante e UUID crescentes. | `200 Page<AuditEvent>`; filtro por título do mesmo lote; consultas de operador/gestor, sem edição. |
+| `GET /settlements/items` | `start?`, `end?` UTC, `assignorUuid?`, `paymentCurrency?`, `page`, `size`. | `200 Page<StatementItem>`; cada título liquidado aparece imediatamente após commit, sem aguardar o restante do lote. |
 
-`SettlementRequest = { uuid, batchUuid, status, statusUrl, acceptedAt, requestedBy: Actor, snapshot: AcceptedSnapshot, completedAt: string | null, result: SettlementResult | null, failure: { code, message } | null }`. `status` é `PENDING | SETTLED | FAILED`; `statusUrl` é caminho relativo `/api/settlement-requests/{uuid}`. Em `PENDING`, os três campos finais são nulos; `SETTLED` exige conclusão/resultado e falha nula; `FAILED` exige conclusão/falha e resultado nulo. Falha exposta é segura, sem diagnóstico técnico interno.
+`SettlementRequest = { uuid, batchUuid, kind: "INITIAL" | "REPROCESS", reason: string | null, status, statusUrl, acceptedAt, requestedBy: Actor, snapshot: AcceptedSnapshot, counts: ItemCounts, settledTotals: FinancialTotals, completedAt: string | null }`. `status` é `PENDING | SETTLED | PARTIALLY_SETTLED | FAILED`. `statusUrl` é `/api/settlement-requests/{uuid}`. `completedAt` é nulo somente enquanto pendente; `counts.ready` é sempre zero; `settledTotals` soma somente sucessos desta solicitação, inclusive enquanto pendente. `reason` é obrigatória em `REPROCESS`, nula em `INITIAL`. `acceptedAt` registra o recebimento persistido da solicitação; não afirma aceite financeiro de cada item. Uma solicitação integralmente rejeitada no aceite é consultável como `FAILED`, com todas as falhas em `ACCEPTANCE`, e seu POST retorna/reproduz `422` conforme D. Não existe resultado financeiro único por lote nem um erro global que oculte erros dos itens.
 
-`AcceptedSnapshot = { calculationDate, calculationVersion, dayCountConvention: "ACTUAL_30", baseRate, exchangeRate: ExchangeQuote | null }`. `SettlementRequestItem = { receivable: Receivable, terms: { days: number, termMonths, spread }, result: { presentValueBrl, discountBrl, paymentCurrency, paymentValue } | null }`. Resultados só aparecem quando toda a liquidação está confirmada; simulação anterior nunca preenche resultado de solicitação pendente/falha. `SettlementResult = { uuid, settledAt, totals: FinancialTotals }`.
+`AcceptedSnapshot = { calculationDate, calculationVersion, dayCountConvention: "ACTUAL_30", baseRate, exchangeRate: ExchangeQuote | null }`. `ItemFailure = { code, message, stage: "ACCEPTANCE" | "PROCESSING", occurredAt }`.
 
-`StatementItem = { uuid, batchUuid, requestUuid, settledAt, receivableUuid, assignorUuid, assignorName, externalReference, paymentCurrency, faceValueBrl, presentValueBrl, paymentValue }`. Ordem decrescente por instante da liquidação, UUID da liquidação e UUID do item. `start` inclui o instante e `end` o exclui; se ambos informados, exigir `start < end`. Datas escolhidas na UI viram início do respectivo dia em `America/Sao_Paulo`, convertido para UTC; não usar o fuso do navegador. Sem limites, consulta paginada de todo o histórico. Estado inicial da UI: últimos sete dias incluindo hoje, com fim exclusivo no início de amanhã.
+`SettlementRequestItem = { uuid, requestUuid, receivable: Receivable, attemptNumber: number, previousAttemptUuid: string | null, status, hasError: boolean, retryCount: number, nextRetryAt: string | null, terms: { days: number, termMonths, spread } | null, completedAt: string | null, failure: ItemFailure | null, result: SettlementResult | null }`. Aqui `status` e `hasError` representam esta tentativa histórica; `receivable.processing` representa o estado atual do título. `status` é `PENDING | SETTLED | FAILED`; regras de erro conforme D. `terms` é obrigatório em pendência/sucesso/falha de processamento e nulo em falha de validação no aceite. Cotação nula no snapshot não autoriza USD: esses títulos falham no aceite; títulos BRL podem prosseguir. `previousAttemptUuid` vincula a tentativa manual anterior do mesmo título.
 
-Manter a tabela de idempotência do anexo D integralmente: mesma chave nunca reexecuta; nova tentativa manual só após `FAILED`, com nova confirmação/chave e novas condições. Chave pertence à operação, não ao operador. O frontend gera uma chave por tentativa e preserva sua associação ao lote em falhas de rede; chave de repetição não é substituída por conflito ou timeout.
+`SettlementResult = { uuid, settledAt, presentValueBrl, discountBrl, paymentCurrency, paymentValue }`. `result` existe somente para tentativa `SETTLED`; confirmação de um título torna seu resultado visível imediatamente. `completedAt` é nulo em `PENDING`, obrigatório em estados terminais. `retryCount` é de 0 a 3, persistido por tentativa; simulação nunca preenche resultado. Uma tentativa antiga falha continua falha mesmo após sucesso de uma nova.
 
-O acompanhamento usa apenas `GET /batches/{batchUuid}` a cada 5 s para acompanhar também uma operação ativa iniciada por outro operador; consultar detalhe histórico somente sob ação do usuário. Suspender nas condições de E e retomar quando a tela estiver visível e autenticada, sem consultas sobrepostas. Não há estados financeiros intermediários inventados como “parcialmente liquidado”.
+`AuditEvent = { uuid, batchUuid, receivableUuid: string | null, requestUuid: string | null, attemptUuid: string | null, eventType, actor: Actor, registeredAt, correlationId, details: AuditDetails }`. `AuditDetails` é união discriminada por `eventType`, com os campos seguros previstos em DATABASE.md: seleção/justificativa e vínculos de reprocessamento, referência às condições, ordinal/agenda de retry, código/mensagem/etapa da falha ou referência ao resultado. Não expor stack trace, credenciais ou JSON técnico arbitrário. Eventos terminais/retry têm tentativa e título; eventos de cadastro/solicitação podem abranger o lote.
+
+`StatementItem = { uuid, batchUuid, requestUuid, settledAt, receivableUuid, assignorUuid, assignorName, externalReference, paymentCurrency, faceValueBrl, presentValueBrl, paymentValue }`; `uuid` identifica a liquidação única do título. Ordem por instante e UUID da liquidação decrescentes. `start` inclui o instante e `end` o exclui; exigir `start < end` quando ambos presentes. Datas escolhidas na UI viram início do dia em `America/Sao_Paulo`, convertido para UTC; não usar fuso do navegador. Estado inicial: últimos sete dias incluindo hoje, fim exclusivo no início de amanhã. Sem limites, histórico completo paginado.
+
+Preservar chave, seleção e justificativa em falhas de rede para repetir exatamente a mesma intenção. Quando `422 NENHUM_TITULO_APTO` trouxer referência à solicitação persistida, apresentar erro em modal e consultar uma vez o detalhe afetado para atualizar flags/contagens; nova execução requer reprocessamento explícito com nova chave. Outros erros de validação não criam solicitação. Nova tentativa manual exige consultar estado atual, selecionar somente falhos, revisar novas condições, justificar e confirmar com nova chave. A ação não pode apagar erro, editar liquidação, reenviar títulos concluídos ou enfileirar automaticamente ao aprovar câmbio. Em `PENDING`, bloquear nova solicitação manual do lote e mostrar contagens de sucessos/falhas/pendentes, preservando resultados já confirmados.
+
+Mostrar status textual e flag acessível por título; não depender somente de cor. A ação “Ver erro” abre o modal reutilizável com mensagem, etapa, horário e acesso ao histórico. Erros HTTP/alertas operacionais continuam no modal central, sem banners inline. Reprocessamento oferece seleção paginada explícita, incluindo ação por título; não selecionar automaticamente páginas não consultadas. Confirmação apresenta os títulos selecionados, justificativa e consequência de recalcular condições, preservando foco e seleção no refetch. Somente `OPERADOR` pode confirmar; gestor consulta erros, resultados e auditoria.
+
+Acompanhar `GET /batches/{batchUuid}` a cada 5 s enquanto `PENDING`. Se `progressVersion` mudar, atualizar somente a página de títulos/itens atualmente visível, no máximo uma consulta adicional por ciclo e sem requisição por título; também atualizar no término. Histórico de auditoria é consultado sob ação explícita. Suspender com aba oculta, saída ou sessão inválida; retomar quando visível, sem sobreposição. Preservar filtros, página, seleção, scroll, foco e modais. Polling e atualização discreta dos itens não usam bloqueio global. Mostrar `PARTIALLY_SETTLED` como “Parcialmente liquidado”; não apresentar lote parcial como concluído integralmente.
 
 #### H.7. Câmbio — domínio frontend `exchange`
 
@@ -309,8 +340,8 @@ Aprovação não dispara liquidação. Se houver lote de origem, manter seu UUID
 
 `GET /dashboard?period=LAST_7_DAYS|CURRENT_MONTH` (padrão `LAST_7_DAYS`) retorna `200 Dashboard`. Períodos definidos pelo relógio do servidor no calendário de São Paulo: sete dias incluindo hoje, ou primeiro dia do mês até hoje, ambos com fim exclusivo no início de amanhã.
 
-`Dashboard = { generatedAt, period: { kind, start, end, timeZone: "America/Sao_Paulo" }, totals: FinancialTotals, dailyPayments: { date, paymentBrl, paymentUsd }[], batchCounts: { READY: number, PENDING: number, SETTLED: number, FAILED: number }, pendingExchangeProposals: number, exchange: { current: ExchangeQuote | null, status: "VALID" | "EXPIRED" | "ABSENT" } }`.
+`Dashboard = { generatedAt, period: { kind, start, end, timeZone: "America/Sao_Paulo" }, totals: FinancialTotals, dailyPayments: { date, paymentBrl, paymentUsd }[], batchCounts: { READY: number, PENDING: number, SETTLED: number, PARTIALLY_SETTLED: number, FAILED: number }, pendingExchangeProposals: number, exchange: { current: ExchangeQuote | null, status: "VALID" | "EXPIRED" | "ABSENT" } }`.
 
-Totais e gráfico consideram apenas itens concluídos dentro do período, incluindo dias sem movimento com `"0.00"`. A série inclui ambas as moedas; alternar moeda do gráfico não faz outra requisição. Situação atual dos lotes, propostas pendentes e câmbio são globais no instante da consulta, sem filtro do período; a UI deve indicar essa diferença. Não somar BRL com USD. Nenhuma tabela de liquidações recentes.
+Totais e gráfico consideram apenas títulos liquidados dentro do período, inclusive de lotes pendentes/parciais, incluindo dias sem movimento com `"0.00"`. A série inclui ambas as moedas; alternar moeda do gráfico não faz outra requisição. Situação atual dos lotes, propostas pendentes e câmbio são globais no instante da consulta, sem filtro do período; a UI deve indicar essa diferença. Não somar BRL com USD. Nenhuma tabela de liquidações recentes.
 
 Uma consulta agregada atende a tela, sem buscar páginas de extrato/lotes ou fazer uma consulta por indicador. Período vazio retorna valores zerados e série preenchida; indisponibilidade retorna erro HTTP, nunca números fictícios. Preservar último resultado identificado como desatualizado, apresentar erro em modal e permitir nova tentativa explícita.

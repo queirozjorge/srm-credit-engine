@@ -14,7 +14,8 @@ export function useSettlement(batch: BatchDetail) {
   const api = useApiClient(); const cache = useQueryClient(); const { identity, session } = useSession(); const { beginLoading, showWarning } = useAppFeedback();
   const sessionSignal = session.signal();
   const text = translations[locale].settlement.flow; const key = ['settlement', 'attempt', batch.uuid];
-  const query = useQuery<Attempt>({ queryKey: key, enabled: false, initialData: empty, gcTime: Infinity, staleTime: Infinity });
+  const query = useQuery<Attempt>({ queryKey: key, enabled: false, initialData: empty,
+    queryFn: async () => cache.getQueryData<Attempt>(key) ?? empty, gcTime: Infinity, staleTime: Infinity });
   const attempt = query.data;
   function current() { return cache.getQueryData<Attempt>(key) ?? empty; }
   function update(next: Partial<Attempt>) { if (!sessionSignal.aborted) cache.setQueryData(key, { ...current(), ...next }); }
@@ -33,8 +34,10 @@ export function useSettlement(batch: BatchDetail) {
     finally { update({ pending: false }); end(); }
   }
   async function submit() {
-    const state = current(); const latest = cache.getQueryData<BatchDetail>(['batches', 'detail', batch.uuid]) ?? batch;
-    if (!can(identity, 'settle') || state.pending || !['READY', 'FAILED'].includes(latest.status) || (state.uncertain && !state.checked)) return false;
+    const state = current(); const batchKey = ['batches', 'detail', batch.uuid];
+    const latest = cache.getQueryData<BatchDetail>(batchKey) ?? batch;
+    if (!can(identity, 'settle') || state.pending || latest.status !== 'READY' || (state.uncertain && !state.checked)) return false;
+    if (!cache.getQueryData<BatchDetail>(batchKey)) cache.setQueryData(batchKey, latest);
     const idempotencyKey = state.uncertain && state.key ? state.key : crypto.randomUUID();
     update({ key: idempotencyKey, pending: true, previousRequest: latest.activeRequest?.uuid ?? null, checked: false });
     const end = beginLoading();
