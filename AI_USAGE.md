@@ -189,3 +189,13 @@ Codex configurou CI GitHub Actions com qualidade e matriz de três suítes de na
 A revisão visual identificou perda de foco após seleção do tamanho de página. Um teste reproduziu a falha em desktop/celular; o provedor de feedback passou a preservar o controle que abriu a lista temporária e restaurá-lo após o carregamento. Regressão reforçada para atualização, limpeza de filtros e paginação. Nenhuma dependência ou pattern adicional. Evidências e limites estão em `docs/FRONTEND_ACCEPTANCE.md`; homologação real não foi declarada concluída.
 
 Verificação final da task 15: tipagem, lint, build e 121 testes unitários aprovados. Após a correção de foco, passaram 80 cenários Chromium: 58 demonstrativos, 12 de componentes e dez de produção/OIDC contratual, em desktop e celular. Fluxos incluem cinco ciclos de modais/combobox, teclado, retorno de foco, zoom 200%, movimento reduzido, larguras de 320 a 1920 px e consultas no fuso de São Paulo com navegador em Los Angeles. Capturas de extrato e modal inspecionadas. Workflow validado como YAML; CI remota não executada. `git diff --check` sem erros. Avisos conhecidos do Zod e tamanho do bundle permanecem; homologação integrada continua bloqueada pelas tasks 13/14.
+
+## Revisão documental: liquidação por título — 27/09/2026
+
+O responsável substituiu a regra de liquidação atômica por lote por processamento independente: preservar sucessos, registrar erro no título e permitir reprocessamento pelo operador com auditoria completa. Também solicitou reavaliar tabelas/colunas. A documentação passou a definir comandos por título, estados parciais, seleção/justificativa de reprocessamento, snapshots por tentativa e unicidade por recebível.
+
+DATABASE.md foi revisto com estado atual separado do histórico de tentativas, flags derivadas, diagnóstico individual, vínculos anteriores, projeções concorrentes, outbox/auditoria por título e resultado financeiro individual. SPEC, AGENTS, decisões e documentos de frontend foram alinhados; evidências antigas foram identificadas como históricas e foi registrada a task 16 de adequação.
+
+Escopo somente documental: não houve implementação de APIs, migrations, alterações de código ou criação de tópicos Kafka. A verificação desta revisão é de consistência textual e contratos; não comprova comportamento financeiro em execução.
+
+Verificação documental: links locais, estrutura das tabelas Markdown, presença de `uuid`/`date_register` nas 12 tabelas e termos centrais dos contratos conferidos; `git diff --check` sem erros. Testes de execução não foram rodados, pois não houve alteração de código.

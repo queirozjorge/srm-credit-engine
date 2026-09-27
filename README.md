@@ -1,5 +1,7 @@
 # SRM Credit Engine
 
+**Revisão contratual de 27/09/2026:** a SPEC agora exige liquidação por título, sucesso parcial, erro individual e reprocessamento auditado. As descrições/evidências da implementação anterior abaixo não comprovam esse fluxo; schemas, mocks, telas, infraestrutura e integração ainda precisam da adequação registrada na task 16 de [FRONTEND_TASKS.md](docs/FRONTEND_TASKS.md).
+
 Plataforma de antecipação de recebíveis com pagamentos em reais ou dólares. Permite cadastrar lotes, simular valores, solicitar liquidações e consultar o histórico das operações.
 
 ## Tecnologias

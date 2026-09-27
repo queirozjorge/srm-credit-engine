@@ -1,5 +1,7 @@
 # HTTP, contratos e sessão demonstrativa
 
+**Revisão contratual de 27/09/2026:** a SPEC agora exige liquidação por título, sucesso parcial, erro individual e reprocessamento auditado. As descrições/evidências da implementação anterior abaixo não comprovam esse fluxo; schemas, mocks, telas, infraestrutura e integração ainda precisam da adequação registrada na task 16 de [FRONTEND_TASKS.md](FRONTEND_TASKS.md).
+
 A task 05 prepara o transporte e a sessão para as telas das próximas tasks. Os contratos funcionais continuam no anexo H da SPEC. Os schemas executáveis ficam em `services/contracts.ts` de cada domínio; primitivas compartilhadas estão em `common/http/contracts.ts`.
 
 ## Executar

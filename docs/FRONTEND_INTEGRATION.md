@@ -17,7 +17,7 @@ Os contratos completos permanecem na SPEC; esta matriz registra disponibilidade 
 | Cedentes | H.3 | Ausente | GET paginado/detalhe, POST 201, PATCH 204, documento duplicado e conflito de versão; uma consulta após alteração. |
 | Lotes/importação | H.4 | Ausente | Busca/paginação, lote misto, cadastro JSON e multipart, arquivo original, prévia 422/limite 413, criação integral e GET posterior. |
 | Simulação | H.5 | Ausente | Decimais em strings, limites, cálculo real, debounce/cancelamento e ausência de persistência. |
-| Liquidação | H.6 e anexos D/E | Ausente | POST 202/200 sem body, chave preservada, 409, nova tentativa após FAILED, polling exclusivo do lote e resultado integral. Depende também de worker, banco e Kafka. |
+| Liquidação | H.6 e anexos D/E | Ausente | POST inicial sem body e reprocessamento com seleção/justificativa, chave/fingerprint preservados, 409, resultados por título, estado parcial, auditoria e polling conforme H.6. Depende também de worker, banco e Kafka. |
 | Câmbio | H.7 | Ausente | Referência independente, proposta 201, decisão 204, gestor distinto, versão concorrente e cotação/snapshot. |
 | Extrato/dashboard | H.6/H.8 | Ausente | Filtros SQL por item, páginas explícitas, calendário de São Paulo, agregação única, moedas separadas e somente resultados concluídos. |
 
@@ -32,6 +32,10 @@ Todos os domínios dependem de JWT validado/autorizado pelo engine, respostas de
 
 ## Como retomar
 
-Fornecer a branch ou ambiente com as APIs implementadas e seu OpenAPI. Confrontar paths, métodos, schemas, multipart, cabeçalhos e status com H.1–H.8 antes de executar mutações. Então validar por domínio, mantendo as mesmas telas e sem ativar mocks; concluir com fluxos autenticados e liquidação real integral. Registrar resultados e limitações no backlog. A implementação dos serviços ausentes exige uma frente própria de backend; não está incluída implicitamente nesta task de integração frontend.
+Fornecer a branch ou ambiente com as APIs implementadas e seu OpenAPI. Confrontar paths, métodos, schemas, multipart, cabeçalhos e status com H.1–H.8 antes de executar mutações. Então validar por domínio, mantendo as mesmas telas e sem ativar mocks; concluir com fluxos autenticados e liquidação real por título com sucesso parcial e reprocessamento auditado. Registrar resultados e limitações no backlog. A implementação dos serviços ausentes exige uma frente própria de backend; não está incluída implicitamente nesta task de integração frontend.
 
 Verificação preparatória da task 14: tipagem, lint, build e 121 testes unitários aprovados. Oito cenários de navegador aprovados em desktop/celular, cobrindo consulta exclusiva do lote durante pendência, conclusão refletida no extrato/dashboard e seleção explícita de 100 itens. Captura do extrato inspecionada; largura de 320 px verificada. Permanecem os avisos não bloqueantes existentes do Zod e tamanho do bundle. `git diff --check` sem erros. Essas evidências usam mocks e não comprovam integração real.
+
+## Adequação do frontend concluída; integração real pendente — 27/09/2026
+
+As tasks 16.1–16.9 atualizaram schemas, seleção e reprocessamento idempotente, polling por `progressVersion`, extrato/dashboard, testes e mocks conforme a nova SPEC. A validação desta etapa usa somente mocks; o status de disponibilidade real acima continua **Ausente**. Quando as APIs forem implementadas, ainda será necessário validar os resultados individuais durante lotes pendentes/parciais, seleção inválida ou já liquidada, snapshots, erros por tentativa, auditoria por outro operador e reentrega após commit. PostgreSQL deverá preservar unicidade por recebível e contadores sob concorrência; consumidor/relay deverão usar o contrato `credit-receivable`. Nenhum teste frontend demonstra essas garantias financeiras ou operacionais.

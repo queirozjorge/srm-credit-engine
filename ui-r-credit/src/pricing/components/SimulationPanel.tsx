@@ -11,7 +11,7 @@ import { useSimulation, type SimulationInput } from '../services/useSimulation';
 import type { Simulation } from '../services/contracts';
 export function SimulationPanel({ input, enabled, action, scope, expectedCount, autoStart = false }: { input: SimulationInput | null; enabled: boolean; scope?: string; expectedCount?: number; autoStart?: boolean; action?: (data: Simulation | null) => ReactNode }) {
   const text = translations[locale].pricing; const [activated, setActivated] = useState(autoStart);
-  const query = useSimulation(input, enabled && activated, scope, expectedCount); const [pagination, setPagination] = useState({ page: 1, size: 5 });
+  const query = useSimulation(input, enabled && (activated || autoStart), scope, expectedCount); const [pagination, setPagination] = useState({ page: 1, size: 5 });
   const data = query.data; const page = Math.min(pagination.page, Math.max(1, Math.ceil((data?.items.length ?? 0) / pagination.size)));
   return <Paper variant="outlined" sx={{ p: 2.5, minWidth: 0 }}><Stack spacing={2}>
     <Stack direction="row" useFlexGap flexWrap="wrap" justifyContent="space-between" gap={1}>
