@@ -25,7 +25,7 @@ test('renderiza a aplicação com os provedores e textos centralizados', async (
   expect(screen.getByRole('heading', {
     level: 1, name: translations[locale].dashboard.title,
   })).toBeVisible();
-  expect(await screen.findByRole('img', { name: new RegExp(translations[locale].dashboard.chart) })).toBeVisible();
+  expect(await screen.findByRole('group', { name: new RegExp(translations[locale].dashboard.chart) })).toBeVisible();
 });
 
 test.each([

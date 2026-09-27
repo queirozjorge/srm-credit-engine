@@ -41,14 +41,15 @@ public class AuditService {
     if (correlation == null) correlation = UUID.randomUUID().toString();
     jdbc.update(
         """
-INSERT INTO audit_event (uuid,event_type,actor_issuer,actor_subject,correlation_id,details,date_register,
+INSERT INTO audit_event (uuid,event_type,actor_issuer,actor_subject,actor_display_name,correlation_id,details,date_register,
 batch_uuid,request_uuid,receivable_uuid,attempt_uuid,settlement_uuid,assignor_uuid,proposal_uuid,exchange_rate_uuid)
-VALUES (?,?,?,?,?,CAST(? AS jsonb),?,?,?,?,?,?,?,?,?)
+VALUES (?,?,?,?,?,?,CAST(? AS jsonb),?,?,?,?,?,?,?,?,?)
 """,
         UUID.randomUUID(),
         eventType,
         actor.issuer(),
         actor.subject(),
+        actor.displayName(),
         correlation,
         json.writeValueAsString(details),
         Timestamp.from(clock.instant()),

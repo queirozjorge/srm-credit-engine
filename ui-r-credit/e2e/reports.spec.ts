@@ -5,13 +5,15 @@ const text = translations[locale]; const dash = text.dashboard; const statement 
 test('dashboard agrega uma vez por período e troca moeda sem consultas extras', async ({ page }, info) => {
   const requests: string[] = []; page.on('request', request => { if (request.url().includes('/api/')) requests.push(new URL(request.url()).pathname); });
   await page.goto('/dashboard'); await page.getByRole('button', { name: text.demo.manager, exact: true }).click();
-  await expect(page.getByRole('img', { name: new RegExp(dash.chart) })).toBeVisible();
+  await expect(page.getByRole('group', { name: new RegExp(dash.chart) })).toBeVisible();
   await expect(page.locator('body')).not.toHaveCSS('overflow', 'hidden');
   expect(requests).toEqual(['/api/dashboard']);
   await expect(page.getByRole('link', { name: text.batch.create.title, exact: true })).toHaveCount(0);
   await page.getByRole('tab', { name: dash.currencies.USD, exact: true }).click();
-  await page.getByRole('button', { name: dash.daily, exact: true }).click();
-  await expect(page.getByRole('table', { name: dash.daily })).toContainText('USD'); expect(requests).toHaveLength(1);
+  await expect(page.getByRole('table')).toHaveCount(0);
+  const usdBar = page.locator('svg[role="group"] rect[role="img"][aria-label*="USD"]').first();
+  await usdBar.hover();
+  await expect(page.locator('svg text').filter({ hasText: 'USD' })).toBeVisible(); expect(requests).toHaveLength(1);
   await page.getByRole('combobox', { name: dash.period }).click(); await page.getByRole('option', { name: dash.periods.CURRENT_MONTH, exact: true }).click();
   await expect(page.locator('body')).not.toHaveCSS('overflow', 'hidden'); await expect.poll(() => requests).toEqual(['/api/dashboard', '/api/dashboard']);
   await expect(page.getByRole('tab', { name: dash.currencies.USD })).toHaveAttribute('aria-selected', 'true');

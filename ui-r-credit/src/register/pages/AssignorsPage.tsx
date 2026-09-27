@@ -2,6 +2,8 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Box, Button, Checkbox, Chip, FormControlLabel, Paper, Stack, TextField, Typography } from '@mui/material';
 import { useSearchParams } from 'react-router';
 import { DataTable } from '../../common/components/DataTable';
+import { RefreshButton } from '../../common/components/RefreshButton';
+import { TableActionButton } from '../../common/components/TableActionButton';
 import { formatCnpj } from '../../common/format/document';
 import { useAppFeedback } from '../../common/components/feedbackContext';
 import { uuid } from '../../common/http/contracts';
@@ -51,14 +53,16 @@ export function AssignorsPage() {
     scroll.current = listView.current?.querySelector('[role="region"]')?.scrollTop ?? 0;
     change({ cedente: row.uuid });
   }
-  return <Stack spacing={3} sx={{ minWidth: 0, flex: 1 }}>
+  return <Stack spacing={2.5} sx={{ minWidth: 0, minHeight: { md: 0 }, flex: 1,
+    overflowY: { xs: 'visible', md: selected ? 'auto' : 'hidden' } }}>
     <Stack direction="row" useFlexGap flexWrap="wrap" justifyContent="space-between" alignItems="flex-start" gap={2}>
       <Box><Typography variant="overline" color="text.secondary">{text.eyebrow}</Typography>
         <Typography component="h1" variant="h1" tabIndex={-1} sx={{ my: 0.5 }}>{text.title}</Typography>
         <Typography color="text.secondary">{text.description}</Typography></Box>
       {!selected && writable && <Button variant="contained" onClick={() => openEditor(null)}>{text.create}</Button>}
     </Stack>
-    <Stack ref={listView} spacing={2} sx={{ display: selected ? 'none' : 'flex', minWidth: 0 }}>
+    <Stack ref={listView} spacing={{ xs: 1.5, md: 0.75 }} sx={{ display: selected ? 'none' : 'flex', minWidth: 0,
+      minHeight: { md: 0 }, flex: 1, overflow: { xs: 'visible', md: 'hidden' } }}>
       <Paper variant="outlined" sx={{ p: 2.5 }}>
         <Stack component="form" direction="row" useFlexGap flexWrap="wrap" gap={1.5} alignItems="center"
           onSubmit={event => { event.preventDefault(); change({ q: normalizeSearch(search), page: '1' }); }}>
@@ -70,17 +74,18 @@ export function AssignorsPage() {
             onChange={(_, checked) => change({ activeOnly: checked ? 'true' : null, page: '1' })} />} />
         </Stack>
       </Paper>
-      <Stack direction="row" useFlexGap flexWrap="wrap" justifyContent="space-between" alignItems="center" gap={1}>
+      <Stack direction="row" useFlexGap flexWrap="wrap" justifyContent="flex-start" alignItems="center" gap={0.5}>
         <Typography variant="body2" color="text.secondary">{listing.data ? text.total(listing.data.totalItems) : text.table}</Typography>
-        <Button onClick={() => { void listing.refetch(); }} disabled={listing.isFetching}>{text.retry}</Button>
+        <RefreshButton label={text.retry} onClick={() => { void listing.refetch(); }} disabled={listing.isFetching} />
       </Stack>
       {listing.data && <DataTable label={text.table} rows={listing.data.items} getRowKey={row => row.uuid} emptyMessage={text.empty}
-        maxHeight="clamp(160px, calc(100dvh - 575px), 540px)"
+        fillHeight
         columns={[
           { id: 'name', label: text.name, render: row => <Typography variant="body2" sx={{ maxWidth: 340, overflowWrap: 'anywhere', fontWeight: 600 }}>{row.name}</Typography> },
           { id: 'document', label: text.document, render: row => <Box component="span" sx={{ whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>{formatCnpj(row.documentNumber)}</Box> },
           { id: 'status', label: text.status, render: row => <Chip size="small" variant="outlined" label={row.deleted ? text.inactive : text.active} /> },
-          { id: 'actions', label: text.actions, align: 'right', render: row => <Button onClick={event => openDetail(row, event.currentTarget)}>{text.view}</Button> },
+          { id: 'actions', label: text.actions, align: 'center', render: row => <TableActionButton label={text.view} icon="view"
+            onClick={event => openDetail(row, event.currentTarget)} /> },
         ]} pagination={{ ...filters, totalItems: listing.data.totalItems, disabled: listing.isFetching,
           onChange: next => change({ page: String(next.page), size: String(next.size) }) }} />}
     </Stack>
@@ -89,7 +94,6 @@ export function AssignorsPage() {
         <Typography ref={heading} component="h2" variant="h2" tabIndex={-1}>{text.detail}</Typography>
         <Stack direction="row" useFlexGap flexWrap="wrap" gap={1}>
           <Button onClick={() => change({ cedente: null })}>{text.back}</Button>
-          {validSelection && <Button disabled={detail.isFetching} onClick={() => { void detail.refetch(); }}>{text.retry}</Button>}
           {writable && detail.data && <Button variant="contained" disabled={detail.isFetching || detail.isError} onClick={() => openEditor(detail.data)}>{text.edit}</Button>}
         </Stack>
       </Stack>

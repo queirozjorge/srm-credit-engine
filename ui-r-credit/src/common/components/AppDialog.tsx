@@ -1,5 +1,6 @@
 import { useId, useRef, useState, type ReactNode } from 'react';
 import { Button, Dialog, DialogActions, DialogContent, DialogTitle, useMediaQuery } from '@mui/material';
+import type { DialogProps } from '@mui/material/Dialog';
 import { locale, translations } from '../../i18n/pt-BR';
 
 export interface AppDialogProps {
@@ -14,11 +15,12 @@ export interface AppDialogProps {
   closeDisabled?: boolean;
   closeVariant?: 'text' | 'outlined' | 'contained';
   describedBy?: string;
+  maxWidth?: DialogProps['maxWidth'];
 }
 
 // Mesmo ciclo do protótipo: fechar uma vez, terminar a saída, restaurar foco.
 export function AppDialog({ open, title, children, onClose, onExited, actions,
-  closeLabel = translations[locale].common.close, closeOnBackdrop = false, closeDisabled = false, closeVariant = 'contained', describedBy }: AppDialogProps) {
+  closeLabel = translations[locale].common.close, closeOnBackdrop = false, closeDisabled = false, closeVariant = 'contained', describedBy, maxWidth = 'sm' }: AppDialogProps) {
   const titleId = useId();
   const reducedMotion = useMediaQuery('(prefers-reduced-motion: reduce)');
   const [previousOpen, setPreviousOpen] = useState(open);
@@ -65,7 +67,7 @@ export function AppDialog({ open, title, children, onClose, onExited, actions,
   if (!shouldRender) return null;
 
   return (
-    <Dialog open={!isClosing} fullWidth maxWidth="sm" disableAutoFocus disableRestoreFocus
+    <Dialog open={!isClosing} fullWidth maxWidth={maxWidth} disableAutoFocus disableRestoreFocus
       aria-labelledby={titleId} aria-describedby={describedBy}
       transitionDuration={reducedMotion ? 0 : 180}
       onClose={(_, reason) => { if (reason !== 'backdropClick' || closeOnBackdrop) requestClose(); }}

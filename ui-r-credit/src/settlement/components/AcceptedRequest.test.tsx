@@ -11,7 +11,7 @@ import { server } from '../../../tests/common/testing/server';
 import { demoUuid } from '../../../tests/common/testing/demo';
 import { locale, translations } from '../../i18n/pt-BR';
 import { requestSchema } from '../services/contracts';
-import { AcceptedRequest } from './AcceptedRequest';
+import { RequestHistory } from './RequestHistory';
 
 test('erro histórico preservado após sucesso atual e modal fecha em cinco ciclos', async () => {
   const text = translations[locale];
@@ -28,17 +28,17 @@ test('erro histórico preservado após sucesso atual e modal fecha em cinco cicl
       terms: null, completedAt: request.acceptedAt, failure, result: null }], page: 1, size: 5, totalItems: 1, totalPages: 1 });
   }));
   const session = createSession(); session.signIn(demoProfiles.operator, demoProfiles.operator.subject);
-  render(<AppProviders session={session}><AcceptedRequest request={request} /></AppProviders>);
+  render(<AppProviders session={session}><RequestHistory batchUuid={request.batchUuid} activeRequest={request} /></AppProviders>);
   await userEvent.click(screen.getByRole('button', { name: text.settlement.flow.items }));
   const trigger = await screen.findByRole('button', { name: text.batch.failure });
   await waitFor(() => expect(screen.queryByRole('progressbar')).not.toBeInTheDocument());
   for (let cycle = 0; cycle < 5; cycle++) {
     await userEvent.click(trigger);
-    const dialog = screen.getByRole('dialog');
+    const dialog = screen.getByRole('dialog', { name: text.batch.errorTitle(currentReceivable.externalReference) });
     expect(dialog).toHaveTextContent(failure.message);
     expect(dialog).toHaveTextContent(text.settlement.audit.stage.ACCEPTANCE);
     await userEvent.keyboard('{Escape}'); fireEvent.click(dialog);
-    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: text.batch.errorTitle(currentReceivable.externalReference) })).not.toBeInTheDocument());
     expect(trigger).toHaveFocus();
   }
   expect(reads).toBe(1);
