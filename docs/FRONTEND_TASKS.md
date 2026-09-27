@@ -1,14 +1,14 @@
 # Frontend — mapa de telas e backlog
 
-**27/09/2026 · Tasks 01–12 concluídas no contrato anterior; adequação frontend das tasks 16.1–16.9 concluída contra mocks. Task 13 com validação autenticada pendente; task 14 bloqueada pelas APIs ausentes; aceite integrado pendente.**
+**27/09/2026 · Frontend usa Keycloak/API reais; modo demonstrativo removido. Suite isolada cobre a UI, suite HTTP real requer ambiente local autenticado; consulte `ENGINE_TASKS.md` para o estado atual da entrega.**
 
-Objetivo: implementar o [wireframe](index.html) em React/Material UI, preservando identidade visual e fluxos. O frontend possui telas funcionais verificadas com mocks e integração OIDC implementada; endpoints de negócio ainda não estão disponíveis. Contratos funcionais, payloads, status e permissões têm fonte única no [anexo H da SPEC](../SPEC.md#h-contratos-propostos-para-o-frontend-e-seus-mocks). Convenções de implementação e validação visual estão em [AGENTS.md](../AGENTS.md).
+Objetivo: implementar o [wireframe](index.html) em React/Material UI, preservando identidade visual e fluxos. O frontend mantém suas telas e cliente HTTP; a produção usa Keycloak e APIs do engine, enquanto mocks ficam isolados em testes. Contratos funcionais, payloads, status e permissões têm fonte única no [anexo H da SPEC](../SPEC.md#h-contratos-propostos-para-o-frontend-e-seus-mocks). Convenções de implementação e validação visual estão em [AGENTS.md](../AGENTS.md).
 
 ## Marcos e limites
 
-- **Marco 1 — tasks 01–12:** telas funcionais com mocks HTTP por domínio, cenários determinísticos e perfis demonstrativos. Evidências deste marco validam a interface, não segurança, precisão ou atomicidade do backend.
-- **Marco 2 — tasks 13–15:** Keycloak real, APIs por domínio e homologação integrada. Implementação das APIs é dependência externa deste backlog.
-- Mocks só em desenvolvimento/testes, habilitados explicitamente; nunca como fallback silencioso para erro da API real. Componentes consomem os mesmos contratos dos serviços reais.
+- **Produção:** autenticação Keycloak e APIs reais; indisponibilidade do backend é apresentada como erro recuperável.
+- **Testes:** MSW, handlers e fixtures só existem no harness automatizado e não são incluídos no build distribuído.
+- As evidências anteriores deste arquivo são históricas; homologação de regras financeiras depende dos testes backend/PostgreSQL e de worker futuro.
 - Reutilizar estrutura e tema existentes. Não copiar o JavaScript monolítico, cálculos financeiros, perfis ou textos de demonstração para os componentes de produção.
 - Tipos/schemas executáveis, bibliotecas, serviços e testes serão introduzidos nas tasks seguintes. A task 01 não instala dependências nem implementa telas/APIs.
 
@@ -73,10 +73,10 @@ Cada task entrega sua implementação e verificação proporcional. Os critério
 | 10 — Simulação/liquidação | Simulação indicativa, confirmação, chave, snapshot, acompanhamento e nova tentativa. | 07, 08 | Resposta antiga ignorada, chave preservada, `409`, polling suspenso/retomado; evidência histórica do contrato integral. | Concluída no contrato anterior; adequação na task 16 |
 | 11 — Câmbio | Cotação/referência, proposta, histórico e decisão por outro usuário. | 05, 10 | Autoaprovação/concorrência bloqueadas; referência indisponível não bloqueia proposta manual; retorno sem liquidar. | Concluída |
 | 12 — Extrato/dashboard | Extrato paginado e dashboard agregado com gráfico acessível em SVG. | 07, 10, 11 | Filtros nos itens, datas de São Paulo, moedas separadas e estados vazio/indisponível. | Concluída |
-| 13 — Keycloak | Login PKCE, retorno na raiz, renovação, logout e Bearer. | Marco 1 | Tokens em memória; sessão real, identidade/papéis e caches isolados. | Implementada; validação autenticada pendente |
-| 14 — APIs reais | Integrar por domínio: cedentes, lotes/importação, simulação, câmbio, liquidação, extrato/dashboard. | 13 e cada API implementada | OpenAPI alinhado; mesmas telas sem mocks; respostas, upload e atualização pontual verificados. | Bloqueada: APIs de negócio ausentes |
-| 15 — Homologação | Jornada completa, visual/acessibilidade, testes na CI e documentação de execução. | 14 e 16; testes incrementais desde 02 | Critérios de AGENTS/SPEC demonstrados; separar evidências mock e reais. | Frontend/CI preparados; aceite integrado bloqueado |
-| 16 — Liquidação por título | Adequar contratos/schemas/mocks, estados de lote/título, seleção de falhos, justificativa, erro/histórico em modal, polling por versão, extrato/dashboard e traduções. | Revisão SPEC/DATABASE de 27/09/2026; componentes existentes. | Sucessos preservados; parcial explícito; reprocessamento só de falhos; chaves/fingerprints preservados; auditoria consultável; cinco ciclos de modais e testes de concorrência/reentrega no backend antes do aceite integrado. | Frontend demonstrativo concluído nas tasks 16.1–16.9; integração real pendente |
+| 13 — Keycloak | Login PKCE, retorno na raiz, renovação, logout e Bearer. | Marco 1 | Tokens em memória; sessão real, identidade/papéis e caches isolados. | Login autenticado em operador e gestor verificado; refresh/logout real pendente |
+| 14 — APIs reais | Integração por domínio | APIs do engine e Keycloak | Contratos H.1–H.8, sessão real e ausência de fallback fictício. | Implementada; quatro jornadas reais aprovadas em desktop/celular |
+| 15 — Homologação | Jornadas reais, visual/acessibilidade, CI e documentação. | 14 e conclusão do engine | Backend/DB/Kafka reais e evidências separadas dos testes isolados. | UI/API homologadas no escopo do engine; processamento financeiro aguarda worker |
+| 16 — Liquidação por título | Resultado por título, estados parciais, reprocessamento explícito, auditoria e polling. | SPEC/DATABASE de 27/09/2026. | Sucessos preservados; falhas auditadas; retries e unicidade protegidos no banco; worker conclui futuramente. | UI real conectada; execução financeira aguarda workflow |
 
 Tasks 06 e 07 são independentes após a fundação; a ordem restante preserva os fluxos que precisam ser verificados juntos. Esta indicação de dependências não implica execução automática de outras tasks.
 
@@ -233,10 +233,12 @@ Verificação da task 12: tipagem, lint, build e 112 testes unitários aprovados
 
 Verificação: tipagem, lint, build e 120 testes unitários aprovados; oito testes de OIDC reexecutados após ajustes finais. Passaram 58 cenários demonstrativos, dez de produção/protocolo e quatro contra a entrada real do Keycloak, totalizando 72 testes de navegador. Testes contratuais usam o adaptador real com provedor simulado, validando PKCE, state, nonce, Bearer, renovação e falha de refresh. Entrada real confirma cliente, redirect URI e desafio PKCE aceitos pelo provedor, sem autenticar usuários. Capturas da entrada desktop/celular inspecionadas. Avisos existentes do Zod e tamanho do bundle permanecem não bloqueantes; `git diff --check` sem erros.
 
-Pendente: execução dos quatro cenários autenticados contra Keycloak real (operador/gestor em desktop/celular). A revisão automática bloqueou a leitura das credenciais demonstrativas do container por exigir autorização explícita. Autorização solicitada; nenhuma senha foi lida, exibida ou persistida. A suíte está pronta e mantém trace/vídeo desativados. Não considerar a sessão autenticada real homologada até essa execução.
+Na verificação inicial, os quatro cenários autenticados contra Keycloak real (operador/gestor em desktop/celular) aguardavam autorização para uso das credenciais locais. Após autorização explícita, os quatro cenários passaram; as senhas não foram exibidas nem registradas. Permanecem pendentes os testes reais de renovação e logout.
 
 
 ## Registro da task 14
+
+> Atualização em 27/09/2026: o estado histórico abaixo descreve a inspeção anterior ao engine. As APIs H.1–H.8 foram implementadas neste ciclo; consulte [FRONTEND_INTEGRATION.md](FRONTEND_INTEGRATION.md) e [ENGINE_TASKS.md](ENGINE_TASKS.md) para o estado e as verificações atuais.
 
 A consulta ao OpenAPI local confirmou `paths: {}`; inspeção do código confirmou ausência de endpoints de negócio, persistência e consumer financeiro. A implementação dessas APIs é dependência externa definida no backlog. Nenhum mock foi apresentado como API real e nenhum contrato de serviço foi inventado. Matriz por domínio e retomada estão no [registro de integração](FRONTEND_INTEGRATION.md).
 
@@ -246,6 +248,8 @@ Verificação preparatória da task 14: tipagem, lint, build e 121 testes unitá
 
 
 ## Registro da task 15
+
+> Atualização em 27/09/2026: Playwright Chrome aprovou 58/58 cenários isolados, 10/10 regressões de produção e 4/4 cenários autenticados no gateway/Keycloak em desktop/celular. Refresh/logout reais e conclusão financeira permanecem pendentes; o consumer do worker está fora do escopo desta entrega.
 
 Configurada CI GitHub Actions para qualidade e três suítes de navegador, com Node 22, instalação pelo lockfile, Chromium, permissões de leitura e artefatos separados. Sem publicação ou execução remota nesta etapa. Testes demonstrativos passam a iniciar na data das fixtures e avançam normalmente; calendário de produção permanece intacto. Testes unitários fixam somente a data por padrão, mantendo testes explícitos de timers.
 

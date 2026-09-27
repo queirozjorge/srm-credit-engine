@@ -1,11 +1,11 @@
 import { expect, test } from 'vitest';
 import { chartScale } from './chart';
 import { dashboardSchema } from './contracts';
-import { dashboardFixture } from '../mocks/fixtures';
-import { aggregateDashboard } from '../mocks/handlers';
-import { createBatchStore } from '../../batch/mocks/handlers';
-import { createExchangeStore } from '../../exchange/mocks/handlers';
-import { demoUuid } from '../../common/testing/demo';
+import { dashboardFixture } from '../../../tests/dashboard/mocks/fixtures';
+import { aggregateDashboard } from '../../../tests/dashboard/mocks/handlers';
+import { createBatchStore } from '../../../tests/batch/mocks/handlers';
+import { createExchangeStore } from '../../../tests/exchange/mocks/handlers';
+import { demoUuid } from '../../../tests/common/testing/demo';
 const item = { uuid: demoUuid(20), batchUuid: demoUuid(2), requestUuid: demoUuid(7), settledAt: '2026-09-26T03:00:00Z', receivableUuid: demoUuid(3), assignorUuid: demoUuid(1), assignorName: 'Cedente A', externalReference: 'A-001', paymentCurrency: 'BRL' as const, faceValueBrl: '110.00', presentValueBrl: '100.00', paymentValue: '100.00' };
 test('agregação separa moedas, preenche dias vazios e mantém indicadores globais', () => {
   const data = aggregateDashboard('LAST_7_DAYS', createBatchStore(), createExchangeStore(), [item, { ...item, uuid: demoUuid(21), paymentCurrency: 'USD', paymentValue: '20.00' }], Date.parse('2026-09-26T12:00:00Z'));

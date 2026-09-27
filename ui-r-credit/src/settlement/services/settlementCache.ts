@@ -108,6 +108,7 @@ export function acceptRequest(cache: QueryClient, request: SettlementRequest, ex
       else void cache.invalidateQueries({ queryKey: key });
     }
   }
+  void cache.invalidateQueries({ queryKey: ['batches', 'items', request.batchUuid], refetchType: 'none' });
   void cache.invalidateQueries({ queryKey: ['batches', 'list'], refetchType: 'none' });
   cache.setQueryData(['settlement', 'request', request.uuid], effectiveRequest);
 }

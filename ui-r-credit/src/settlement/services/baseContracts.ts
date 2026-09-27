@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { uuid, instant, date, actor, rate, money, count, version, totals } from '../../common/http/contracts';
+import { uuid, instant, date, signedRate, actor, rate, money, count, version, totals } from '../../common/http/contracts';
 import { quoteSchema } from '../../exchange/services/contracts';
 
 export const batchStatus = z.enum(['READY', 'PENDING', 'SETTLED', 'PARTIALLY_SETTLED', 'FAILED']);
@@ -25,7 +25,7 @@ export const acceptedSnapshotSchema = z.object({
   calculationDate: date,
   calculationVersion: z.string().min(1),
   dayCountConvention: z.literal('ACTUAL_30'),
-  baseRate: rate,
+  baseRate: signedRate,
   exchangeRate: quoteSchema.nullable(),
 });
 

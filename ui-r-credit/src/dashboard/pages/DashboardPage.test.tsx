@@ -6,10 +6,10 @@ import { http, HttpResponse } from 'msw';
 import { AppProviders } from '../../app/AppProviders';
 import { NavigationMemoryProvider } from '../../app/routes/NavigationMemoryProvider';
 import { createSession } from '../../auth/services/session';
-import { demoProfiles } from '../../auth/mocks/profiles';
-import { server } from '../../common/testing/server';
-import { dashboardFixture } from '../mocks/fixtures';
-import { locale, translations } from '../../i18n/pt-BR';
+import { demoProfiles } from '../../../tests/auth/mocks/profiles';
+import { server } from '../../../tests/common/testing/server';
+import { dashboardFixture } from '../../../tests/dashboard/mocks/fixtures';
+import { locale, translations } from '../../../tests/pt-BR';
 import { DashboardPage } from './DashboardPage';
 
 const text = translations[locale];
@@ -17,7 +17,7 @@ const copy = text.dashboard;
 
 function openDashboard() {
   const session = createSession();
-  session.signIn(demoProfiles.operator);
+  session.signIn(demoProfiles.operator, demoProfiles.operator.subject);
   return render(<MemoryRouter initialEntries={['/dashboard']}><AppProviders session={session}><NavigationMemoryProvider><DashboardPage /></NavigationMemoryProvider></AppProviders></MemoryRouter>);
 }
 

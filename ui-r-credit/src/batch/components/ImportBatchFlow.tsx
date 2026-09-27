@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Button, Checkbox, FormControlLabel, Paper, Stack, Typography } from '@mui/material';
 import { NavigationLink } from '../../app/routes/NavigationLink';
-import { demoMode } from '../../app/config';
 import { formatDecimal, moneyFormat } from '../../common/format/decimal';
 import { locale, translations } from '../../i18n/pt-BR';
 import { useCreateBatch } from '../services/useCreateBatch';
@@ -16,11 +15,6 @@ export function ImportBatchFlow({ format, onLocked }: { format: ImportFormat | n
   useEffect(() => { onLocked(locked); }, [locked, onLocked]);
   useEffect(() => { if (input.current) input.current.value = ''; }, [format]);
   function clear() { flow.clear(); if (input.current) input.current.value = ''; }
-  async function sample(invalid = false) {
-    if (!demoMode || !format) return;
-    const { sampleFile } = await import('../mocks/importSamples');
-    flow.select(sampleFile(format, invalid)); if (input.current) input.current.value = '';
-  }
   function confirm() {
     if (!format || !flow.valid || !flow.file || locked) return;
     setConsulted(false); setChecked(false);
@@ -34,19 +28,16 @@ export function ImportBatchFlow({ format, onLocked }: { format: ImportFormat | n
       <Typography color="text.secondary">{copy.instructions}</Typography>
       <Typography variant="body2" sx={{ overflowWrap: 'anywhere' }}>{format === 'CSV' ? copy.csv : copy.cnab}</Typography>
       {!creation.created && <>
+        {format && <Stack spacing={0.5} alignItems="flex-start">
+          <Button component="a" href={`/examples/recebiveis.${format === 'CSV' ? 'csv' : 'cnab'}`} download>{copy.downloadSample(format)}</Button>
+          <Typography variant="caption" color="text.secondary">{copy.sampleRequirements}</Typography>
+        </Stack>}
         <Button component="label" variant="outlined" disabled={locked} sx={{ alignSelf: 'flex-start' }}>
           {copy.choose}<input ref={input} type="file" aria-label={copy.choose} disabled={locked} accept={format === 'CSV' ? '.csv,text/csv' : '.rem,.cnab,.txt,text/plain'}
             style={{ position: 'absolute', width: 1, height: 1, overflow: 'hidden', clipPath: 'inset(50%)' }}
             onChange={event => { flow.select(event.target.files?.[0] ?? null); event.target.value = ''; }} />
         </Button>
         {flow.file && <Typography variant="body2" sx={{ overflowWrap: 'anywhere' }}>{copy.selected(flow.file.name, flow.file.size)}</Typography>}
-        {demoMode && <Stack spacing={1}>
-          <Typography variant="body2" color="text.secondary">{copy.demoHint}</Typography>
-          <Stack direction="row" useFlexGap flexWrap="wrap" gap={1}>
-            <Button disabled={locked} onClick={() => { void sample(); }}>{copy.sample}</Button>
-            <Button disabled={locked} onClick={() => { void sample(true); }}>{copy.invalidSample}</Button>
-          </Stack>
-        </Stack>}
         <Stack direction="row" useFlexGap flexWrap="wrap" gap={1}>
           <Button variant="contained" disabled={!flow.file || locked} onClick={() => { void flow.requestPreview(); }}>{copy.preview}</Button>
           <Button disabled={locked || (!flow.file && !flow.preview)} onClick={clear}>{copy.cancel}</Button>

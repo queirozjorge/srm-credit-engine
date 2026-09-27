@@ -5,10 +5,10 @@ import { http, HttpResponse } from 'msw';
 import { AppProviders } from '../../app/AppProviders';
 import { NavigationMemoryProvider } from '../../app/routes/NavigationMemoryProvider';
 import { createSession } from '../../auth/services/session';
-import { demoProfiles } from '../../auth/mocks/profiles';
-import { server } from '../../common/testing/server';
-import { demoTime, demoUuid } from '../../common/testing/demo';
-import { locale, translations } from '../../i18n/pt-BR';
+import { demoProfiles } from '../../../tests/auth/mocks/profiles';
+import { server } from '../../../tests/common/testing/server';
+import { demoTime, demoUuid } from '../../../tests/common/testing/demo';
+import { locale, translations } from '../../../tests/pt-BR';
 import { StatementPage } from './StatementPage';
 
 const text = translations[locale];
@@ -16,7 +16,7 @@ const copy = text.settlement.statement;
 
 function openStatement() {
   const session = createSession();
-  session.signIn(demoProfiles.operator);
+  session.signIn(demoProfiles.operator, demoProfiles.operator.subject);
   return render(<MemoryRouter initialEntries={['/extrato']}><AppProviders session={session}><NavigationMemoryProvider><StatementPage /></NavigationMemoryProvider></AppProviders></MemoryRouter>);
 }
 

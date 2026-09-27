@@ -50,7 +50,10 @@ export function useSettlement(batch: BatchDetail) {
       if (sessionSignal.aborted) return false;
       const unknown = !(error instanceof ApiError) || error.status === 0 || error.status >= 500 || error.code === 'INVALID_RESPONSE';
       update({ uncertain: unknown });
-      if (error instanceof ApiError && error.status === 409) {
+      if (error instanceof ApiError && error.status === 422 && error.code === 'NENHUM_TITULO_APTO' && error.context?.requestUuid) {
+        showWarning({ message: error.message });
+        try { await readBatch(); } catch { /* O histórico persistido continua disponível para consulta. */ }
+      } else if (error instanceof ApiError && error.status === 409) {
         update({ uncertain: true });
         showWarning({ message: error.message });
         try { await readBatch(); } catch { /* GET conserva a chave e o estado incerto. */ }

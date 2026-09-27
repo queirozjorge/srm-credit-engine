@@ -1,21 +1,7 @@
-import { readFile } from 'node:fs/promises';
-import { resolve } from 'node:path';
 import { test, expect } from '@playwright/test';
-import { translations, locale } from '../src/i18n/pt-BR';
-import { dashboardFixture } from '../src/dashboard/mocks/fixtures';
+import { translations, locale } from '../tests/pt-BR';
 const text = translations[locale];
-// Executa o build local na origem permitida pelo realm. Keycloak e seu protocolo são reais;
-// somente os endpoints de negócio, ainda ausentes no engine, recebem fixtures.
-test.beforeEach(async ({ page }) => {
-  await page.route('https://localhost:8443/**', async route => {
-    const path = new URL(route.request().url()).pathname;
-    if (path.startsWith('/auth/')) return route.continue();
-    if (path === '/api/dashboard') return route.fulfill({ json: dashboardFixture });
-    if (path.startsWith('/api/')) return route.fulfill({ status: 404, json: { code: 'NOT_FOUND', message: 'Recurso não encontrado.' } });
-    const asset = path.startsWith('/assets/') && /^\/assets\/[a-zA-Z0-9_.-]+$/.test(path);
-    await route.fulfill({ body: await readFile(resolve('dist', asset ? path.slice(1) : 'index.html')), contentType: asset ? path.endsWith('.css') ? 'text/css' : 'application/javascript' : 'text/html' });
-  });
-});
+// Jornada contra gateway, Keycloak e APIs reais; nenhuma interceptação de negócio.
 for (const profile of ['operador', 'gestor'] as const) test(`${profile}: login real, PKCE, renovação, Bearer e logout`, async ({ page }, info) => {
   const password = process.env[profile === 'operador' ? 'KEYCLOAK_OPERATOR_PASSWORD' : 'KEYCLOAK_MANAGER_PASSWORD'];
   test.skip(!password, 'Defina as credenciais locais de teste do realm.');

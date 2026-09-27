@@ -8,7 +8,7 @@ import { DecimalField } from '../../src/common/components/DecimalField';
 import { CnpjField } from '../../src/common/components/CnpjField';
 import { DateField } from '../../src/common/components/DateField';
 import { DataTable } from '../../src/common/components/DataTable';
-import { locale, translations } from '../../src/i18n/pt-BR';
+import { locale, translations } from '../../tests/pt-BR';
 
 export function Fixture() {
   const text = translations[locale].common.preview;

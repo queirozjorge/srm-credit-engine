@@ -5,12 +5,12 @@ import { MemoryRouter } from 'react-router';
 import type { PropsWithChildren } from 'react';
 import { AppProviders } from '../../app/AppProviders';
 import { createSession } from '../../auth/services/session';
-import { demoProfiles } from '../../auth/mocks/profiles';
-import { server } from '../../common/testing/server';
-import { proposalFixture } from '../mocks/fixtures';
+import { demoProfiles } from '../../../tests/auth/mocks/profiles';
+import { server } from '../../../tests/common/testing/server';
+import { proposalFixture } from '../../../tests/exchange/mocks/fixtures';
 import { useExchangeMutation } from './useExchangeMutation';
 function wrapper({ children }: PropsWithChildren) {
-  const session = createSession(); session.signIn(demoProfiles.combined);
+  const session = createSession(); session.signIn(demoProfiles.combined, demoProfiles.combined.subject);
   return <MemoryRouter><AppProviders session={session}>{children}</AppProviders></MemoryRouter>;
 }
 test('proposta estrita: um POST e uma atualização; falha de consulta não libera novo envio', async () => {

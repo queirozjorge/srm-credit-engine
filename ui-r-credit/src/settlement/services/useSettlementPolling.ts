@@ -9,10 +9,11 @@ import { useAppFeedback } from '../../common/components/feedbackContext';
 import { pagination } from '../../batch/services/useBatches';
 import { batchDetailSchema, type BatchDetail } from '../../batch/services/contracts';
 import { receivableSchema } from '../../batch/services/receivableContracts';
-import type { SettlementRequest } from './contracts';
+import { requestItemSchema, type SettlementRequest } from './contracts';
 import { acceptRequest } from './settlementCache';
 
 const receivablePageSchema = pageOf(receivableSchema);
+const requestItemsSchema = pageOf(requestItemSchema);
 
 export function useSettlementPolling(request: SettlementRequest | null, receivablesVisible = true) {
   const api = useApiClient(); const cache = useQueryClient(); const { showWarning } = useAppFeedback();
@@ -56,6 +57,18 @@ export function useSettlementPolling(request: SettlementRequest | null, receivab
             schema: receivablePageSchema, query: target.filters, signal: abort.signal, notify: false,
           });
           if (active && !abort.signal.aborted) cache.setQueryData(itemsKey, items);
+        } else if (progressChanged || terminal) {
+          // Only the current request's open table is refreshed; historical attempts remain immutable.
+          const visibleItems = cache.getQueryCache().findAll({ queryKey: ['settlement', 'items', id], type: 'active' })
+            .filter(query => query.state.fetchStatus !== 'fetching').at(-1);
+          const selectedPage = visibleItems?.queryKey[3];
+          if (visibleItems && selectedPage && typeof selectedPage === 'object' && 'page' in selectedPage && 'size' in selectedPage
+            && typeof selectedPage.page === 'number' && typeof selectedPage.size === 'number') {
+            const { data: items } = await api.request(`/api/settlement-requests/${id}/items`, {
+              schema: requestItemsSchema, query: { page: selectedPage.page, size: selectedPage.size }, signal: abort.signal, notify: false,
+            });
+            if (active && !abort.signal.aborted) cache.setQueryData(visibleItems.queryKey, items);
+          }
         }
       } catch (error) {
         if (active && !abort.signal.aborted && error instanceof ApiError && !warned.current.has(`${id}:${error.code}`)) {

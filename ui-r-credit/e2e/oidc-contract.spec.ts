@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { test, expect } from '@playwright/test';
-import { dashboardFixture } from '../src/dashboard/mocks/fixtures';
-import { translations, locale } from '../src/i18n/pt-BR';
+import { dashboardFixture } from '../tests/dashboard/mocks/fixtures';
+import { translations, locale } from '../tests/pt-BR';
 const text = translations[locale];
 const jwt = (claims: object) => `${Buffer.from(JSON.stringify({ alg: 'RS256', typ: 'JWT' })).toString('base64url')}.${Buffer.from(JSON.stringify(claims)).toString('base64url')}.test-signature`;
 // Provedor contratual sem credenciais: exercita o adaptador real e valida PKCE/state/nonce.

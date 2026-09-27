@@ -1,4 +1,3 @@
-import { demoMode } from '../../app/config';
 import { useState, type ReactNode } from 'react';
 import { Button, Chip, Paper, Stack, Typography } from '@mui/material';
 import { NavigationLink } from '../../app/routes/NavigationLink';
@@ -19,7 +18,6 @@ export function SimulationPanel({ input, enabled, action, scope, expectedCount, 
       <Button disabled={!enabled || !input || query.updating} onClick={() => { setActivated(true); query.refresh(); }}>{text.refresh}</Button>
     </Stack>
     <Typography variant="body2" color="text.secondary">{text.indicative}</Typography>
-    {demoMode && <Typography variant="caption" color="text.secondary">{text.demoHint}</Typography>}
     {query.updating && <Typography role="status" variant="body2">{text.updating}</Typography>}
     {data && <>
       <Chip sx={{ alignSelf: 'flex-start' }} variant="outlined" label={query.valid ? text.current : text.stale} />

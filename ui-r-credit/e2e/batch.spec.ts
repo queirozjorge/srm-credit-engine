@@ -1,6 +1,6 @@
-import { test } from './demoTest';
+import { test } from './isolatedTest';
 import { expect, type Page } from '@playwright/test';
-import { translations, locale } from '../src/i18n/pt-BR';
+import { translations, locale } from '../tests/pt-BR';
 const text = translations[locale]; const copy = text.batch;
 const id = '00000000-0000-4000-8000-000000000002';
 async function enter(page: Page, path = '/lotes', manager = false) {

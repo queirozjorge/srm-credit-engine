@@ -1,6 +1,7 @@
-import { test } from './demoTest';
+import { test } from './isolatedTest';
 import { expect, type Page } from '@playwright/test';
-import { locale, translations } from '../src/i18n/pt-BR';
+import { locale, translations } from '../tests/pt-BR';
+import { sampleContents } from '../tests/batch/mocks/importSamples';
 const text = translations[locale]; const copy = text.batch.import;
 async function enter(page: Page, format: 'CSV' | 'CNAB' = 'CSV') {
   await page.goto('/lotes/novo'); await page.getByRole('button', { name: text.demo.operator, exact: true }).click();
@@ -16,7 +17,7 @@ for (const format of ['CSV', 'CNAB'] as const) test(`${format}: prévia, revisã
   await enter(page, format);
   const requests: { method: string; path: string; content: string }[] = [];
   page.on('request', req => { if (new URL(req.url()).pathname.startsWith('/api/batches')) requests.push({ method: req.method(), path: new URL(req.url()).pathname, content: req.headers()['content-type'] ?? '' }); });
-  await page.getByRole('button', { name: copy.sample, exact: true }).click();
+  await page.getByLabel(copy.choose, { exact: true }).setInputFiles({ name: `sample.${format.toLowerCase()}`, mimeType: 'text/plain', buffer: Buffer.from(sampleContents(format)) });
   await page.getByRole('button', { name: copy.preview, exact: true }).click();
   await expect(page.getByRole('table', { name: copy.table })).toContainText(`${format}-0001`);
   await expect(page.locator('body')).not.toHaveCSS('overflow', 'hidden');
@@ -37,11 +38,11 @@ for (const format of ['CSV', 'CNAB'] as const) test(`${format}: prévia, revisã
   await page.getByRole('link', { name: text.batch.view, exact: true }).click();
   await expect(page.getByRole('table', { name: text.batch.receivables })).toContainText(`${format}-0001`);
   if (format === 'CNAB') await expect(page.getByRole('row').filter({ hasText: 'CNAB-0001' })).toContainText(text.batch.currencies.USD);
-  await expect(page.getByText(text.batch.statuses.READY, { exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: text.batch.summary, exact: true }).locator('..').getByText(text.batch.statuses.READY, { exact: true })).toBeVisible();
 });
 test('422 bloqueia cadastro parcial; erros por linha abrem e fecham sem reabertura', async ({ page }, info) => {
   await enter(page);
-  await page.getByRole('button', { name: copy.invalidSample, exact: true }).click();
+  await page.getByLabel(copy.choose, { exact: true }).setInputFiles({ name: 'invalid.csv', mimeType: 'text/csv', buffer: Buffer.from(sampleContents('CSV', true)) });
   await page.getByRole('button', { name: copy.preview, exact: true }).click();
   await expect(page.getByRole('dialog')).toContainText(copy.partialBlocked); await dismiss(page);
   await expect(page.getByRole('table', { name: copy.table })).toContainText('CSV-0001');

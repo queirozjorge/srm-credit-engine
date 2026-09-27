@@ -1,6 +1,7 @@
-import { useRef, useState } from 'react';
-import { Button, Collapse, Paper, Stack, Typography, useMediaQuery } from '@mui/material';
+import { useState } from 'react';
+import { Button, Chip, Collapse, Paper, Stack, Typography, useMediaQuery } from '@mui/material';
 import { useQuery } from '@tanstack/react-query';
+import { AppDialog } from '../../common/components/AppDialog';
 import { FinancialTotals } from '../../common/components/FinancialTotals';
 import { DataTable } from '../../common/components/DataTable';
 import { useApiClient } from '../../common/http/useApiClient';
@@ -9,19 +10,20 @@ import { pageOf } from '../../common/http/contracts';
 import { formatCivilDate, formatInstant } from '../../common/format/dates';
 import { formatDecimal, moneyFormat, rateFormat } from '../../common/format/decimal';
 import { BatchStatus } from '../../batch/components/BatchStatus';
-import { requestItemSchema, type SettlementRequest } from '../services/contracts';
+import { requestItemSchema, type SettlementRequest, type ItemFailure } from '../services/contracts';
 import { locale, translations } from '../../i18n/pt-BR';
 const itemsSchema = pageOf(requestItemSchema);
-export function AcceptedRequest({ request }: { request: SettlementRequest }) {
+export function AcceptedRequest({ request, active = true }: { request: SettlementRequest; active?: boolean }) {
   const reduced = useMediaQuery('(prefers-reduced-motion: reduce)');
   const text = translations[locale].settlement.flow; const api = useApiClient(); const { beginLoading } = useAppFeedback();
+  const [failure, setFailure] = useState<{ reference: string; details: ItemFailure } | null>(null);
+  const [failureOpen, setFailureOpen] = useState(false);
+  const copy = translations[locale].batch;
+  function closeFailure() { setFailureOpen(false); }
   const [expanded, setExpanded] = useState(false); const [pagination, setPagination] = useState({ page: 1, size: 5 });
-  const previous = useRef<{ uuid: string; status: string; page: number; size: number } | null>(null);
-  const items = useQuery({ queryKey: ['settlement', 'items', request.uuid, request.status, pagination], enabled: expanded,
-    queryFn: async ({ signal }) => { const old = previous.current;
-      const background = old?.uuid === request.uuid && old.page === pagination.page && old.size === pagination.size && old.status !== request.status;
-      previous.current = { uuid: request.uuid, status: request.status, ...pagination };
-      const end = background ? () => {} : beginLoading();
+  const items = useQuery({ queryKey: ['settlement', 'items', request.uuid, pagination], enabled: expanded && active,
+    queryFn: async ({ signal }) => {
+      const end = beginLoading();
       try { return (await api.request(`/api/settlement-requests/${request.uuid}/items`, { schema: itemsSchema, query: pagination, signal })).data; }
       finally { end(); }
     }, placeholderData: (old, query) => query?.queryKey[2] === request.uuid ? old : undefined });
@@ -40,11 +42,27 @@ export function AcceptedRequest({ request }: { request: SettlementRequest }) {
     {items.data && <DataTable label={text.items} rows={items.data.items} getRowKey={row => row.receivable.uuid} maxHeight={260}
       columns={[
         { id: 'reference', label: translations[locale].batch.reference, render: row => row.receivable.externalReference },
-        { id: 'status', label: translations[locale].batch.status, render: row => translations[locale].batch.statuses[row.status] },
+        { id: 'status', label: copy.status, render: row => <Stack spacing={0.5} alignItems="flex-start">
+          <Typography variant="body2">{copy.statuses[row.status]}</Typography>
+          {row.hasError && <Chip size="small" color="error" variant="outlined" label={copy.errorFlag} />}
+          {row.failure && <Button size="small" onClick={() => {
+            if (failure) return;
+            setFailure({ reference: row.receivable.externalReference, details: row.failure! }); setFailureOpen(true);
+          }}>{copy.failure}</Button>}
+        </Stack> },
         { id: 'days', label: translations[locale].pricing.days, render: row => row.terms ? row.terms.days : text.noResult },
         { id: 'spread', label: translations[locale].pricing.spread, render: row => row.terms ? formatDecimal(row.terms.spread, rateFormat) : text.noResult },
         { id: 'payment', label: translations[locale].pricing.payment, render: row => row.result ? `${row.result.paymentCurrency} ${formatDecimal(row.result.paymentValue, moneyFormat)}` : text.noResult },
       ]} pagination={{ ...pagination, totalItems: items.data.totalItems, disabled: items.isFetching, onChange: setPagination }} />}
     </Collapse>
+    {failure && <AppDialog open={failureOpen} title={copy.errorTitle(failure.reference)} onClose={closeFailure}
+      onExited={() => setFailure(null)} closeLabel={translations[locale].common.understood}>
+      <Stack spacing={1.5} sx={{ py: 1 }}>
+        <Typography sx={{ overflowWrap: 'anywhere' }}>{failure.details.message}</Typography>
+        <Typography variant="body2">{copy.errorStage}: {translations[locale].settlement.audit.stage[failure.details.stage]}</Typography>
+        <Typography variant="body2">{copy.errorOccurredAt}: {formatInstant(failure.details.occurredAt)}</Typography>
+        <Typography variant="caption" color="text.secondary">{copy.errorCode}: {failure.details.code}</Typography>
+      </Stack>
+    </AppDialog>}
   </Stack></Paper>;
 }

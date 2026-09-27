@@ -6,6 +6,7 @@ export const date = z.string().refine(isCivilDate);
 export const version = z.string().regex(/^(0|[1-9]\d{0,18})$/);
 export const money = z.string().regex(/^-?(0|[1-9]\d{0,16})\.\d{2}$/);
 export const rate = z.string().regex(/^(0|[1-9]\d{0,11})(\.\d{1,12})?$/);
+export const signedRate = z.string().regex(/^-?(0|[1-9]\d{0,11})(\.\d{1,12})?$/);
 export const term = z.string().regex(/^\d+(\.\d+)?$/);
 export const count = z.number().int().nonnegative().safe();
 export const currency = z.enum(['BRL', 'USD']);

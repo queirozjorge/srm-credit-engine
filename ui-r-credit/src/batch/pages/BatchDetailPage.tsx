@@ -24,7 +24,7 @@ export function BatchDetailPage() {
   const filters = pagination(params);
   const selected = params.get('tab');
   const activeTab: DetailTab = selected === 'requests' || selected === 'audit' ? selected : 'receivables';
-  const { detail, items, valid } = useBatchDetail(batchUuid, filters);
+  const { detail, items, valid } = useBatchDetail(batchUuid, filters, activeTab === 'receivables');
   const { showWarning } = useAppFeedback();
   const [selectedFailure, setSelectedFailure] = useState<{ uuid: string; reference: string; failure: ItemFailure } | null>(null);
   const [failureDialogOpen, setFailureDialogOpen] = useState(false);

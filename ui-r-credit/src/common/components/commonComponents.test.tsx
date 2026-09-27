@@ -4,7 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { expect, test, vi } from 'vitest';
 import { DecimalField } from './DecimalField';
 import { TablePaginationControls } from './TablePaginationControls';
-import { locale, translations } from '../../i18n/pt-BR';
+import { locale, translations } from '../../../tests/pt-BR';
 
 const text = translations[locale].common;
 
