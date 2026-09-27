@@ -1,0 +1,28 @@
+import { render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { expect, test, vi } from 'vitest';
+import { http, HttpResponse } from 'msw';
+import { MemoryRouter } from 'react-router';
+import { AppProviders } from '../../app/AppProviders';
+import { createSession } from '../../auth/services/session';
+import { demoProfiles } from '../../auth/mocks/profiles';
+import { server } from '../../common/testing/server';
+import { createExchangeHandlers, createExchangeStore } from '../mocks/handlers';
+import { ExchangePage } from './ExchangePage';
+import { locale, translations } from '../../i18n/pt-BR';
+vi.mock('../../app/config', () => ({ demoMode: true }));
+const text = translations[locale].exchange;
+test('referência indisponível e ausência de cotação não bloqueiam proposta manual; atualização não consulta provedor', async () => {
+  const store = createExchangeStore(); store.quotes = []; let references = 0;
+  server.use(http.get('/api/exchange/reference', () => { references++; return new HttpResponse(null, { status: 503 }); }), ...createExchangeHandlers(store));
+  const session = createSession(); session.signIn(demoProfiles.operator);
+  render(<MemoryRouter><AppProviders session={session}><ExchangePage /></AppProviders></MemoryRouter>);
+  await screen.findByText(text.quoteStatuses.ABSENT);
+  const warning = await screen.findByRole('dialog'); await userEvent.click(screen.getByRole('button', { name: translations[locale].common.understood }));
+  await waitFor(() => expect(warning).not.toBeInTheDocument());
+  await userEvent.click(screen.getByRole('button', { name: text.propose }));
+  await userEvent.type(screen.getByRole('textbox', { name: new RegExp(text.rate.replace(/[()$]/g, '.')) }), '5,25');
+  await userEvent.type(screen.getByLabelText(new RegExp(text.justification)), 'Primeira cotação manual.');
+  await userEvent.click(screen.getByRole('button', { name: text.save }));
+  await screen.findByText(text.proposed); expect(references).toBe(1); expect(store.proposals[0]?.proposedRate).toBe('5.25');
+});

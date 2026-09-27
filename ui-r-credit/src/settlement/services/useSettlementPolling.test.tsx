@@ -1,0 +1,46 @@
+import { act, renderHook } from '@testing-library/react';
+import { afterEach, expect, test, vi } from 'vitest';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import type { PropsWithChildren } from 'react';
+import { requestFixture } from '../mocks/fixtures';
+import { batchFixture } from '../../batch/mocks/fixtures';
+import type { BatchDetail } from '../../batch/services/contracts';
+import { useSettlementPolling } from './useSettlementPolling';
+const mocks = vi.hoisted(() => ({ request: vi.fn(), showWarning: vi.fn() }));
+vi.mock('../../common/http/useApiClient', () => ({ useApiClient: () => mocks }));
+vi.mock('../../common/components/feedbackContext', () => ({ useAppFeedback: () => mocks }));
+afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); mocks.request.mockReset(); });
+test('polling respeita cinco segundos, evita sobreposição, suspende oculto e termina após resultado', async () => {
+  vi.useFakeTimers(); let hidden = false; vi.spyOn(document, 'hidden', 'get').mockImplementation(() => hidden);
+  const cache = new QueryClient(); cache.setQueryData(['batches', 'detail', batchFixture.uuid], { ...batchFixture, status: 'PENDING', activeRequest: requestFixture });
+  const wrapper = ({ children }: PropsWithChildren) => <QueryClientProvider client={cache}>{children}</QueryClientProvider>;
+  let resolve: ((data: { data: BatchDetail }) => void) | undefined;
+  mocks.request.mockImplementation(() => new Promise(done => { resolve = done; }));
+  const { unmount } = renderHook(() => useSettlementPolling(requestFixture), { wrapper });
+  await act(() => vi.advanceTimersByTimeAsync(4999)); expect(mocks.request).not.toHaveBeenCalled();
+  await act(() => vi.advanceTimersByTimeAsync(1)); expect(mocks.request).toHaveBeenCalledTimes(1);
+  expect(mocks.request).toHaveBeenLastCalledWith(`/api/batches/${batchFixture.uuid}`, expect.objectContaining({ notify: false }));
+  await act(() => vi.advanceTimersByTimeAsync(15000)); expect(mocks.request).toHaveBeenCalledTimes(1);
+  await act(async () => { resolve?.({ data: { ...batchFixture, status: 'PENDING', activeRequest: requestFixture } }); });
+  hidden = true; act(() => document.dispatchEvent(new Event('visibilitychange')));
+  await act(() => vi.advanceTimersByTimeAsync(15000)); expect(mocks.request).toHaveBeenCalledTimes(1);
+  hidden = false; act(() => document.dispatchEvent(new Event('visibilitychange'))); expect(mocks.request).toHaveBeenCalledTimes(2);
+  const failed = { ...requestFixture, status: 'FAILED' as const, completedAt: requestFixture.acceptedAt, result: null, failure: { code: 'FAILED', message: 'Falha.' } };
+  await act(async () => { resolve?.({ data: { ...batchFixture, status: 'FAILED', activeRequest: failed } }); });
+  await act(() => vi.advanceTimersByTimeAsync(15000)); expect(mocks.request).toHaveBeenCalledTimes(2);
+  expect(cache.getQueryData(['batches', 'detail', batchFixture.uuid])).toMatchObject({ status: 'FAILED', activeRequest: { result: null } });
+  unmount(); cache.clear();
+});
+
+test('consulta do lote assume operação ativa de outro operador, sem consultar a solicitação antiga', async () => {
+  vi.useFakeTimers(); vi.spyOn(document, 'hidden', 'get').mockReturnValue(false);
+  const cache = new QueryClient(); cache.setQueryData(['batches', 'detail', batchFixture.uuid], { ...batchFixture, status: 'PENDING', activeRequest: requestFixture });
+  const wrapper = ({ children }: PropsWithChildren) => <QueryClientProvider client={cache}>{children}</QueryClientProvider>;
+  const next = { ...requestFixture, uuid: '00000000-0000-4000-8000-000000000099', statusUrl: '/api/settlement-requests/00000000-0000-4000-8000-000000000099' };
+  mocks.request.mockResolvedValue({ data: { ...batchFixture, status: 'PENDING', activeRequest: next } });
+  const { unmount } = renderHook(() => useSettlementPolling(requestFixture), { wrapper });
+  await act(() => vi.advanceTimersByTimeAsync(5000));
+  expect(cache.getQueryData(['batches', 'detail', batchFixture.uuid])).toMatchObject({ activeRequest: { uuid: next.uuid } });
+  expect(cache.getQueryData(['settlement', 'request', next.uuid])).toEqual(next);
+  expect(mocks.request).toHaveBeenCalledTimes(1); unmount(); cache.clear();
+});
