@@ -1,5 +1,7 @@
 package com.backend.integration;
 
+import com.backend.batch.repository.BatchQueryRepository;
+import com.backend.settlement.repository.AcceptanceRepository;
 import com.nimbusds.jose.*;
 import com.nimbusds.jose.crypto.RSASSASigner;
 import com.nimbusds.jose.jwk.RSAKey;
@@ -13,6 +15,8 @@ import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.*;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Primary;
@@ -23,6 +27,10 @@ import org.springframework.security.oauth2.jwt.*;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.datasource.DataSourceTransactionManager;
+import org.springframework.jdbc.datasource.DriverManagerDataSource;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.testcontainers.junit.jupiter.*;
@@ -30,6 +38,7 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.doAnswer;
 
 @Testcontainers
 @SpringBootTest(webEnvironment=SpringBootTest.WebEnvironment.RANDOM_PORT,properties={
@@ -49,6 +58,8 @@ class EngineHttpIT {
  @DynamicPropertySource static void properties(DynamicPropertyRegistry r){r.add("spring.datasource.url",DATABASE::getJdbcUrl);r.add("spring.datasource.username",()->"srm_engine");r.add("spring.datasource.password",()->"test");}
  @LocalServerPort int port;
  @Autowired JdbcTemplate jdbc;
+ @MockitoSpyBean BatchQueryRepository batchQueries;
+ @MockitoSpyBean AcceptanceRepository acceptanceRepository;
  final HttpClient client=HttpClient.newHttpClient();
  @TestConfiguration(proxyBeanMethods=false)
  static class TokenVerificationConfiguration {
@@ -98,6 +109,67 @@ class EngineHttpIT {
   assertEquals(1,jdbc.queryForObject("select count(*) from settlement_request where batch_uuid=?",Integer.class,UUID.fromString(batch)));
   var assignor=assignor();var repeated=item(assignor,"BRL");assertEquals(201,call("POST","/batches",Map.of("items",List.of(repeated)),null).status);var duplicate=call("POST","/batches",Map.of("items",List.of(repeated)),null);assertEquals(409,duplicate.status,duplicate.body.toString());assertEquals("RECEBIVEL_DUPLICADO",duplicate.body.path("code").asString());
  }
+ @ParameterizedTest(name="two operators, same idempotency key = {0}")
+ @ValueSource(booleans={false,true})
+ void twoOperatorsCannotSettleTheSameReceivableTwice(boolean sameKey) throws Exception {
+  UUID batch=UUID.fromString(batch("BRL"));
+  String path="/batches/"+batch+"/settlements";
+  String firstKey=UUID.randomUUID().toString(),secondKey=sameKey?firstKey:UUID.randomUUID().toString();
+  String firstToken=token("operator-alpha","OPERADOR"),secondToken=token("operator-beta","OPERADOR");
+  if(!sameKey) {
+   // Distinct keys must reach the batch lock concurrently, inside distinct authenticated transactions.
+   var reachedBatchLock=new CyclicBarrier(2);
+   doAnswer(invocation -> {
+    reachedBatchLock.await(10,TimeUnit.SECONDS);
+    return invocation.callRealMethod();
+   }).when(acceptanceRepository).batch(batch);
+  }
+  Response first,second;
+  var start=new CyclicBarrier(3);
+  try(var pool=Executors.newFixedThreadPool(2)) {
+   var alpha=pool.submit(() -> {start.await(10,TimeUnit.SECONDS);return request("POST",path,null,firstKey,firstToken);});
+   var beta=pool.submit(() -> {start.await(10,TimeUnit.SECONDS);return request("POST",path,null,secondKey,secondToken);});
+   start.await(10,TimeUnit.SECONDS);
+   first=alpha.get(30,TimeUnit.SECONDS);second=beta.get(30,TimeUnit.SECONDS);
+  }
+  // The barrier is only needed for the simultaneous acceptance, never for later replays.
+  org.mockito.Mockito.doCallRealMethod().when(acceptanceRepository).batch(batch);
+  assertEquals(sameKey?List.of(202,202):List.of(202,409),
+      java.util.stream.Stream.of(first.status,second.status).sorted().toList(),first.body+" / "+second.body);
+  Response accepted=first.status==202?first:second;
+  UUID requestUuid=UUID.fromString(accepted.body.path("uuid").asString());
+  if(sameKey) assertEquals(first.body.path("uuid"),second.body.path("uuid"));
+  else {
+   Response conflict=first.status==409?first:second;
+   assertEquals("LOTE_EM_PROCESSAMENTO",conflict.body.path("code").asString());
+   assertEquals(requestUuid.toString(),conflict.body.path("context").path("requestUuid").asString());
+  }
+  String requestedBy=jdbc.queryForObject("select requested_by_subject from settlement_request where uuid=?",String.class,requestUuid);
+  assertTrue(Set.of("operator-alpha","operator-beta").contains(requestedBy));
+  if(!sameKey) assertEquals(first.status==202?"operator-alpha":"operator-beta",requestedBy);
+  assertEquals(requestedBy,jdbc.queryForObject("select actor_subject from audit_event where request_uuid=? and event_type='SETTLEMENT_REQUESTED'",String.class,requestUuid));
+  assertEquals(1,jdbc.queryForObject("select count(*) from settlement_request where batch_uuid=?",Integer.class,batch));
+  assertEquals(1,jdbc.queryForObject("select count(*) from settlement_request_item where request_uuid=?",Integer.class,requestUuid));
+  assertEquals(1,jdbc.queryForObject("select count(*) from outbox_message where batch_uuid=? and topic='credit-receivable'",Integer.class,batch));
+
+  settleAcceptedTitle(batch);
+  var worker=new JdbcTemplate(new DriverManagerDataSource(DATABASE.getJdbcUrl(),"srm_workflow","test"));
+  assertThrows(org.springframework.dao.DuplicateKeyException.class,() -> worker.update("""
+      insert into settlement(uuid,batch_uuid,request_uuid,receivable_uuid,attempt_uuid,terms_uuid,settled_at,
+          present_value_brl,discount_brl,payment_amount,payment_currency,date_register)
+      select gen_random_uuid(),batch_uuid,request_uuid,receivable_uuid,attempt_uuid,terms_uuid,settled_at,
+          present_value_brl,discount_brl,payment_amount,payment_currency,date_register from settlement where batch_uuid=?
+      """,batch));
+  for(var replay:List.of(request("POST",path,null,firstKey,firstToken),request("POST",path,null,secondKey,secondToken))) {
+   assertEquals(200,replay.status,replay.body.toString());
+   assertEquals(requestUuid.toString(),replay.body.path("uuid").asString());
+  }
+  assertEquals(1,jdbc.queryForObject("select count(*) from settlement where batch_uuid=?",Integer.class,batch));
+  assertEquals(1,jdbc.queryForObject("select count(*) from audit_event where batch_uuid=? and event_type='RECEIVABLE_SETTLED'",Integer.class,batch));
+  assertEquals(1,jdbc.queryForObject("select count(*) from settlement_request where batch_uuid=?",Integer.class,batch));
+  assertEquals(1,jdbc.queryForObject("select count(*) from outbox_message where batch_uuid=?",Integer.class,batch));
+ }
+
  @Test void authenticationPermissionsAndStrictTransportAreEnforced()throws Exception{
   assertEquals(401,request("GET","/batches",null,null,null).status);assertEquals(403,request("POST","/batches",Map.of("items",List.of()),null,token("manager","GESTOR")).status);
   assertEquals(404,call("GET","/missing-route",null,null).status);
@@ -107,5 +179,46 @@ class EngineHttpIT {
   assertEquals(400,call("GET","/assignors?page=0",null,null).status);
   var current=call("GET","/assignors/"+assignor,null,null);assertEquals(204,call("PATCH","/assignors/"+assignor,Map.of("name","Novo nome","version",current.body.path("version").asString()),null).status);
   assertEquals(409,call("PATCH","/assignors/"+assignor,Map.of("name","Conflito","version",current.body.path("version").asString()),null).status);
+ }
+
+ @Test void batchDetailUsesOneSnapshotWhenWorkerCommitsBetweenQueries() throws Exception {
+  UUID batch = UUID.fromString(batch("BRL"));
+  var accepted = call("POST", "/batches/" + batch + "/settlements", null, UUID.randomUUID().toString());
+  assertEquals(202, accepted.status, accepted.body.toString());
+  var committed = new java.util.concurrent.atomic.AtomicBoolean();
+  doAnswer(invocation -> {
+   Object snapshot = invocation.callRealMethod();
+   if (committed.compareAndSet(false, true)) settleAcceptedTitle(batch);
+   return snapshot;
+  }).when(batchQueries).detail(batch);
+
+  var during = call("GET", "/batches/" + batch, null, null);
+  assertEquals(200, during.status, during.body.toString());
+  assertEquals("PENDING", during.body.path("status").asString());
+  assertEquals(1, during.body.path("counts").path("pending").asInt());
+  assertEquals("PENDING", during.body.path("activeRequest").path("status").asString());
+  assertEquals("0.00", during.body.path("settledTotals").path("presentValueBrl").asString());
+
+  var after = call("GET", "/batches/" + batch, null, null);
+  assertEquals(200, after.status, after.body.toString());
+  assertEquals("SETTLED", after.body.path("status").asString());
+  assertEquals(1, after.body.path("counts").path("settled").asInt());
+  assertEquals("SETTLED", after.body.path("activeRequest").path("status").asString());
+  assertEquals("975.61", after.body.path("settledTotals").path("presentValueBrl").asString());
+ }
+
+ private void settleAcceptedTitle(UUID batch) {
+  var source = new DriverManagerDataSource(DATABASE.getJdbcUrl(), "srm_workflow", "test");
+  var worker = new JdbcTemplate(source);
+  new TransactionTemplate(new DataSourceTransactionManager(source)).executeWithoutResult(status -> {
+   var attempt = worker.queryForMap("select i.uuid,i.request_uuid,i.receivable_uuid,t.uuid as terms_uuid from settlement_request_item i join settlement_request q on q.uuid=i.request_uuid join receivable_terms t on t.attempt_uuid=i.uuid where q.batch_uuid=?", batch);
+   UUID result = UUID.randomUUID();
+   worker.update("insert into settlement(uuid,batch_uuid,request_uuid,receivable_uuid,attempt_uuid,terms_uuid,settled_at,present_value_brl,discount_brl,payment_amount,payment_currency,date_register) values(?,?,?,?,?,?,now(),975.61,24.39,975.61,'BRL',now())", result, batch, attempt.get("request_uuid"), attempt.get("receivable_uuid"), attempt.get("uuid"), attempt.get("terms_uuid"));
+   worker.update("update settlement_request_item set status='SETTLED',completed_at=now(),version=version+1,date_updated=now() where uuid=?", attempt.get("uuid"));
+   worker.update("update receivable_processing set status='SETTLED',version=version+1,date_updated=now() where receivable_uuid=?", attempt.get("receivable_uuid"));
+   worker.update("update settlement_request set status='SETTLED',pending_count=0,settled_count=1,completed_at=now(),version=version+1,date_updated=now() where uuid=?", attempt.get("request_uuid"));
+   worker.update("update batch set status='SETTLED',pending_count=0,settled_count=1,version=version+1,date_updated=now() where uuid=?", batch);
+   worker.update("insert into audit_event(uuid,batch_uuid,request_uuid,receivable_uuid,attempt_uuid,settlement_uuid,event_type,actor_issuer,actor_subject,correlation_id,details,date_register) values(gen_random_uuid(),?,?,?,?,?,'RECEIVABLE_SETTLED','worker','worker','snapshot-test','{}',now())", batch, attempt.get("request_uuid"), attempt.get("receivable_uuid"), attempt.get("uuid"), result);
+  });
  }
 }

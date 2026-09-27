@@ -24,7 +24,7 @@ export const requestItemSchema = z.object({
   .refine(item => item.status === 'PENDING' ? item.completedAt === null && item.failure === null && item.result === null
     : item.completedAt !== null && (item.status === 'SETTLED' ? item.failure === null && item.result !== null : item.failure !== null && item.result === null))
   .refine(item => item.terms !== null || (item.status === 'FAILED' && item.failure?.stage === 'ACCEPTANCE'))
-  .refine(item => item.status !== 'PENDING' || item.nextRetryAt === null || item.retryCount < 3)
+  .refine(item => item.nextRetryAt === null || item.retryCount > 0)
   .refine(item => item.status === 'PENDING' || item.nextRetryAt === null)
   .refine(item => item.result === null || item.result.paymentCurrency === item.receivable.paymentCurrency)
   .refine(item => item.previousAttemptUuid !== item.uuid);

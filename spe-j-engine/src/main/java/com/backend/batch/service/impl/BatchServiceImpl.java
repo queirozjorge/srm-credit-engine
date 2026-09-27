@@ -14,6 +14,7 @@ import java.time.Clock;
 import java.util.*;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.annotation.Isolation;
 
 @Service
 @Transactional(readOnly = true)
@@ -77,6 +78,7 @@ public class BatchServiceImpl implements IBatchService {
     return queries.list(q, status, page, size);
   }
 
+  @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
   public Object detail(UUID uuid) {
     var view = queries.detail(uuid);
     var request = (UUID) view.remove("activeRequestUuid");

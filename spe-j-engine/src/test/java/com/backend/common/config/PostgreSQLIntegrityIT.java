@@ -38,7 +38,7 @@ class PostgreSQLIntegrityIT {
     @Test
     void migrationsAreRepeatableWithoutReapplyingOrDeletingData() {
         assertEquals(0, flyway.migrate().migrationsExecuted);
-        assertEquals(3, flyway.info().applied().length);
+        assertEquals(4, flyway.info().applied().length);
     }
 
     @Test
@@ -162,6 +162,48 @@ class PostgreSQLIntegrityIT {
             c.rollback();
         }
         assertEquals(0,new JdbcTemplate(admin).queryForObject("SELECT count(*) FROM pending_integrity_check",Integer.class));
+    }
+
+    @Test
+    void projectionChangesWithoutMatchingTitleTransitionsCannotCommit() throws Exception {
+        Fixture f;
+        try(Connection c=runtime.getConnection()) {
+            c.setAutoCommit(false); f=registration(c); c.commit(); accepted(c,f); c.commit();
+            c.createStatement().execute("UPDATE batch SET status='FAILED',pending_count=0,failed_count=1,version=version+1,date_updated=now() WHERE uuid='"+f.batch()+"'");
+            var error=assertThrows(SQLException.class,c::commit);
+            assertEquals("23514",error.getSQLState()); c.rollback();
+            c.createStatement().execute("UPDATE settlement_request SET status='FAILED',pending_count=0,failed_count=1,completed_at=now(),version=version+1,date_updated=now() WHERE uuid='"+f.request()+"'");
+            error=assertThrows(SQLException.class,c::commit);
+            assertEquals("23514",error.getSQLState()); c.rollback();
+            assertEquals("PENDING",new JdbcTemplate(runtime).queryForObject("SELECT status FROM batch WHERE uuid=?",String.class,f.batch()));
+        }
+    }
+
+    @Test
+    void runtimeCannotForgeOrClearConservationDeltas() throws Exception {
+        try(Connection c=runtime.getConnection()) {
+            c.setAutoCommit(false);
+            for(String sql:new String[]{
+                "SELECT queue_projection_delta('batch',gen_random_uuid(),0::bigint,0::bigint,0::bigint,0::bigint,0::bigint)",
+                "UPDATE pending_integrity_check SET pending_delta=0",
+                "SELECT check_projection_delta('batch',gen_random_uuid())"}) {
+                assertThrows(SQLException.class,()->c.createStatement().execute(sql));c.rollback();
+            }
+        }
+    }
+
+    @Test
+    void repeatedHeaderUpdatesCoalesceAndRollbackLeavesNoPrivateDeltas() throws Exception {
+        Fixture f;
+        try(Connection c=runtime.getConnection()) {
+            c.setAutoCommit(false);f=registration(c);c.commit();
+            for(int i=0;i<5;i++) c.createStatement().execute("UPDATE batch SET version=version+1,date_updated=now() WHERE uuid='"+f.batch()+"'");
+            c.commit();
+            assertEquals(0,new JdbcTemplate(admin).queryForObject("SELECT count(*) FROM pending_integrity_check",Integer.class));
+            accepted(c,f);c.rollback();
+            assertEquals("READY",new JdbcTemplate(runtime).queryForObject("SELECT status FROM batch WHERE uuid=?",String.class,f.batch()));
+            assertEquals(0,new JdbcTemplate(admin).queryForObject("SELECT count(*) FROM pending_integrity_check",Integer.class));
+        }
     }
 
     static Fixture registration(Connection connection) throws SQLException {

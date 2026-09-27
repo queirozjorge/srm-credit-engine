@@ -9,6 +9,9 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalManagementPort;
 import org.springframework.http.HttpStatus;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.kafka.core.ProducerFactory;
+import io.micrometer.core.instrument.MeterRegistry;
 
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -46,6 +49,9 @@ class ActuatorHealthEndpointIT {
 
     private final HttpClient httpClient = HttpClient.newHttpClient();
 
+    @Autowired MeterRegistry meters;
+    @Autowired ProducerFactory<String, String> producers;
+
     @LocalManagementPort
     private int managementPort;
 
@@ -69,6 +75,22 @@ class ActuatorHealthEndpointIT {
                 HttpResponse.BodyHandlers.ofString());
 
         assertEquals(HttpStatus.NOT_FOUND.value(), response.statusCode());
+    }
+
+    @Test
+    void exposesPoolAndProducerMetricsForOutboxDiagnosis() throws Exception {
+        assertTrue(meters.find("hikaricp.connections.active").gauge() != null);
+        assertTrue(meters.find("hikaricp.connections.pending").gauge() != null);
+        try (var producer = producers.createProducer()) {
+            assertFalse(producer.metrics().isEmpty());
+            assertTrue(meters.getMeters().stream().anyMatch(meter -> meter.getId().getName().startsWith("kafka.producer.")));
+            var response = httpClient.send(
+                    HttpRequest.newBuilder(URI.create(managementUrl("/actuator/metrics"))).GET().build(),
+                    HttpResponse.BodyHandlers.ofString());
+            assertEquals(200, response.statusCode());
+            assertTrue(response.body().contains("hikaricp.connections.pending"));
+            assertTrue(response.body().contains("kafka.producer."));
+        }
     }
 
     private String managementUrl(String path) {

@@ -6,6 +6,10 @@ spring:
     username: ${ENGINE_DB_USER:srm_engine}
     password: ${ENGINE_DB_PASSWORD:}
     hikari:
+      pool-name: spe-j-engine
+      maximum-pool-size: ${ENGINE_DB_POOL_MAX_SIZE:10}
+      minimum-idle: ${ENGINE_DB_POOL_MIN_IDLE:10}
+      connection-timeout: ${ENGINE_DB_CONNECTION_TIMEOUT_MS:30000}
       connection-init-sql: SET TIME ZONE 'UTC'
   jpa:
     open-in-view: false
@@ -46,6 +50,13 @@ management:
     web:
       exposure:
         include: health,metrics
+  metrics:
+    tags:
+      application: ${spring.application.name}
+    distribution:
+      percentiles:
+        "engine.outbox.publish.duration": 0.5,0.95,0.99
+        "hikaricp.connections.acquire": 0.5,0.95,0.99
   endpoint:
     health:
       show-components: never
@@ -73,7 +84,9 @@ engine:
     audience: ${KEYCLOAK_AUDIENCE:spe-j-engine}
   outbox:
     enabled: ${OUTBOX_ENABLED:true}
-    delay-ms: ${OUTBOX_DELAY_MS:1000}
+    delay-ms: ${OUTBOX_DELAY_MS:100}
+    concurrency: ${OUTBOX_CONCURRENCY:4}
+    batch-size: ${OUTBOX_BATCH_SIZE:1000}
     claim-seconds: 60
     retry-seconds: 5
 
