@@ -78,3 +78,9 @@ O Compose inicia Nginx, Keycloak, PostgreSQL, Kafka, engine, workflow e frontend
 - **Segredos locais:** `.env.example` oferece credenciais de demonstração para inicialização. Cada pessoa pode substituí-las em `.env`, ignorado pelo Git. Esses valores e a topologia local não são configurações de produção.
 
 Os contratos detalhados de rotas, limites, respostas, cache e logs do gateway estão em [SPEC.md](SPEC.md). Comandos, endereços, credenciais de demonstração e diagnóstico estão em [README.md](README.md).
+
+## 7. Frontend por marcos e contratos — 26/09/2026
+
+Implementar primeiro as telas com mocks HTTP explícitos por domínio, preservando composição e identidade do wireframe com Material UI; depois integrar Keycloak e APIs reais. Isso permite validar interface e estados enquanto o backend ainda não possui operações de negócio. A alternativa de aguardar cada API adiaria a validação dos fluxos; o custo aceito é manter fixtures e contratos sincronizados com o futuro OpenAPI. Mocks não são fallback de produção nem evidência de integridade financeira.
+
+O responsável aprovou cadastro/edição de cedentes também pelo gestor. A matriz de autorização e os contratos ficam exclusivamente no anexo H da SPEC; dependências, estados das tasks e adaptações do protótipo ficam no [backlog do frontend](docs/FRONTEND_TASKS.md). Nesta etapa foram definidos contratos documentais, sem introduzir patterns, camadas executáveis, dependências ou endpoints.

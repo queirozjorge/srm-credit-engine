@@ -12,6 +12,7 @@ export default defineConfig({
       ],
     },
   ],
+  build: { copyPublicDir: false }, // public contém somente o worker demonstrativo.
   server: { host: '127.0.0.1', port: 5174, strictPort: true },
   preview: { host: '127.0.0.1', port: 4174, strictPort: true },
 });

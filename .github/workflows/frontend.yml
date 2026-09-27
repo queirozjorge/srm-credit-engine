@@ -1,0 +1,64 @@
+name: Frontend
+'on':
+  pull_request:
+    paths: ['ui-r-credit/**', '.github/workflows/frontend.yml', 'AGENTS.md', 'SPEC.md']
+  push:
+    paths: ['ui-r-credit/**', '.github/workflows/frontend.yml', 'AGENTS.md', 'SPEC.md']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: frontend-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: ui-r-credit
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: ui-r-credit/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm test
+      - run: npm run build
+  browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        suite: ['test:e2e', 'test:e2e:demo', 'test:e2e:components']
+    defaults:
+      run:
+        working-directory: ui-r-credit
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: ui-r-credit/package-lock.json
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm run ${{ matrix.suite }} -- --workers=2
+      - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        with:
+          name: frontend-${{ strategy.job-index }}
+          path: |
+            ui-r-credit/playwright-report/
+            ui-r-credit/test-results/
+          retention-days: 7
+          if-no-files-found: ignore

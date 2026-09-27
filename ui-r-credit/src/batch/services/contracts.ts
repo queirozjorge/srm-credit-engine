@@ -1,0 +1,13 @@
+import { z } from 'zod';
+import { uuid, count, money, instant, actor, pageOf, apiErrorSchema, fieldIssue } from '../../common/http/contracts';
+import { requestSchema } from '../../settlement/services/contracts';
+import { receivableInputSchema, previewItemSchema } from './receivableContracts';
+export const batchStatus = z.enum(['READY', 'PENDING', 'SETTLED', 'FAILED']);
+export const batchSummarySchema = z.object({ uuid, source: z.enum(['FORM', 'CSV', 'CNAB']), status: batchStatus, itemCount: count, assignorCount: count, soleAssignor: z.object({ uuid, name: z.string() }).nullable(), faceValueBrl: money, registeredAt: instant });
+export const batchDetailSchema = batchSummarySchema.extend({ createdBy: actor, activeRequest: requestSchema.nullable() });
+export const batchPageSchema = pageOf(batchSummarySchema);
+export const createBatchSchema = z.strictObject({ items: z.array(receivableInputSchema).min(1).max(1000) });
+export const batchCreatedSchema = z.object({ uuid, status: z.literal('READY') });
+export const previewSchema = z.object({ source: z.enum(['CSV', 'CNAB']), itemCount: count.max(1000), faceValueBrl: money, items: z.array(previewItemSchema).max(1000) });
+export const invalidPreviewSchema = apiErrorSchema.extend({ code: z.literal('ARQUIVO_INVALIDO'), details: z.array(fieldIssue).max(1000), detailsTruncated: z.boolean().optional(), preview: z.object({ source: z.enum(['CSV', 'CNAB']), items: z.array(previewItemSchema).max(1000) }) });
+export type BatchDetail = z.infer<typeof batchDetailSchema>;
