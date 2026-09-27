@@ -27,6 +27,7 @@ const oldRequest = request({ uuid: '00000000-0000-4000-8000-000000000011', kind:
 function batch(activeRequest = oldRequest): BatchDetail {
   return { uuid: '00000000-0000-4000-8000-000000000010', source: 'FORM', status: 'PARTIALLY_SETTLED', itemCount: 3,
     assignorCount: 1, soleAssignor: { uuid: '00000000-0000-4000-8000-000000000020', name: 'Cedente' },
+    representativeExternalReference: 'REF-REPRESENTATIVA',
     faceValueBrl: '300.00', registeredAt: '2026-09-27T09:00:00Z', counts: { ready: 0, pending: 0, settled: 2, failed: 1 },
     createdBy: actor, activeRequest, settledTotals: oldRequest.settledTotals, progressVersion: '2' };
 }

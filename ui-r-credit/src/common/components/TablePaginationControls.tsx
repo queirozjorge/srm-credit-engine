@@ -1,5 +1,5 @@
 import { useId, useState } from 'react';
-import { Box, Button, Stack, TablePagination, TextField, Typography } from '@mui/material';
+import { Box, Button, FormControl, IconButton, MenuItem, Select, Stack, TextField, Tooltip, Typography } from '@mui/material';
 import { locale, translations } from '../../i18n/pt-BR';
 
 export interface PaginationState { page: number; size: number }
@@ -9,8 +9,6 @@ export interface TablePaginationProps extends PaginationState {
   disabled?: boolean;
   onChange: (next: PaginationState) => void;
 }
-
-function NoActions() { return null; }
 
 export function TablePaginationControls({ page, size, totalItems, pageSizes = [5, 10, 20, 50], disabled = false,
   onChange }: TablePaginationProps) {
@@ -22,36 +20,40 @@ export function TablePaginationControls({ page, size, totalItems, pageSizes = [5
   const requested = /^\d+$/.test(jump) ? Number(jump) : NaN;
   const valid = Number.isSafeInteger(requested) && requested >= 1 && requested <= totalPages;
   const invalid = attempted && !valid;
-  const from = totalItems === 0 || page > totalPages ? 0 : (page - 1) * size + 1;
   return (
-    <Box component="nav" aria-label={text.label} sx={{ p: 2, borderTop: 1, borderColor: 'divider' }}>
-      <TablePagination component="div" count={totalItems} rowsPerPage={size}
-        page={Math.max(0, Math.min(page - 1, totalPages - 1))} rowsPerPageOptions={pageSizes} disabled={disabled}
-        labelRowsPerPage={text.size} labelDisplayedRows={() => text.range(from, from ? Math.min(page * size, totalItems) : 0, totalItems)}
-        onPageChange={(_, next) => onChange({ page: next + 1, size })}
-        onRowsPerPageChange={(event) => { setAttempted(false); setJump(''); onChange({ page: 1, size: Number(event.target.value) }); }}
-        ActionsComponent={NoActions}
-        sx={{ overflow: 'visible', '& .MuiTablePagination-toolbar': { flexWrap: 'wrap', gap: 1, p: 0 },
-          '& .MuiTablePagination-spacer': { display: 'none' }, '& .MuiTablePagination-selectLabel': { display: 'block' },
-          '& .MuiTablePagination-displayedRows': { m: 0 } }} />
-      <Stack direction="row" useFlexGap flexWrap="wrap" alignItems="center" gap={2}>
+    <Box component="nav" aria-label={text.label} sx={{ px: 2, py: 1.25, borderTop: 1, borderColor: 'divider' }}>
+      <Stack direction="row" useFlexGap flexWrap="wrap" justifyContent="center" alignItems="center" gap={1.5}>
+        <FormControl size="small" disabled={disabled} sx={{ minWidth: 88 }}>
+          <Select value={size} inputProps={{ 'aria-label': text.size }}
+            onChange={(event) => { setAttempted(false); setJump(''); onChange({ page: 1, size: Number(event.target.value) }); }}>
+            {pageSizes.map(option => <MenuItem key={option} value={option}>{option}</MenuItem>)}
+          </Select>
+        </FormControl>
         <Typography variant="body2" role="status">{text.page(page, totalPages)}</Typography>
-        <Stack component="form" direction="row" alignItems="flex-start" spacing={1} noValidate
+        <Stack component="form" direction="row" alignItems="center" spacing={1} noValidate
           onSubmit={(event) => {
             event.preventDefault(); setAttempted(true);
             if (!valid || disabled || requested === page) return;
             onChange({ page: requested, size });
           }}>
-          <TextField id={id} size="small" label={text.jump} value={jump} disabled={disabled || totalPages === 0}
+          <TextField id={id} size="small" value={jump} disabled={disabled || totalPages === 0}
             onChange={(event) => { setJump(event.target.value); setAttempted(false); }}
             error={invalid} helperText={invalid ? text.invalid(totalPages) : undefined}
-            slotProps={{ htmlInput: { inputMode: 'numeric' } }} sx={{ width: 160 }} />
+            slotProps={{ htmlInput: { inputMode: 'numeric', 'aria-label': text.jump, placeholder: text.jump } }} sx={{ width: 160 }} />
           <Button type="submit" variant="outlined" disabled={disabled || totalPages === 0}>{text.go}</Button>
         </Stack>
-        <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
-          <Button disabled={disabled || page <= 1} onClick={() => onChange({ page: page - 1, size })}>{text.previous}</Button>
-          <Button disabled={disabled || page >= totalPages} onClick={() => onChange({ page: page + 1, size })}>{text.next}</Button>
-        </Stack>
+        <Tooltip title={text.previous}><span><IconButton aria-label={text.previous} disabled={disabled || page <= 1}
+          onClick={() => onChange({ page: page - 1, size })}>
+          <Box component="svg" aria-hidden="true" viewBox="0 0 24 24" sx={{ width: 22, height: 22, fill: 'none', stroke: 'currentColor', strokeWidth: 1.8, strokeLinecap: 'round', strokeLinejoin: 'round' }}>
+            <path d="m14.5 5-7 7 7 7" />
+          </Box>
+        </IconButton></span></Tooltip>
+        <Tooltip title={text.next}><span><IconButton aria-label={text.next} disabled={disabled || page >= totalPages}
+          onClick={() => onChange({ page: page + 1, size })}>
+          <Box component="svg" aria-hidden="true" viewBox="0 0 24 24" sx={{ width: 22, height: 22, fill: 'none', stroke: 'currentColor', strokeWidth: 1.8, strokeLinecap: 'round', strokeLinejoin: 'round' }}>
+            <path d="m9.5 5 7 7-7 7" />
+          </Box>
+        </IconButton></span></Tooltip>
       </Stack>
     </Box>
   );

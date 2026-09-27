@@ -1,6 +1,8 @@
 import { Button, Stack, Typography } from '@mui/material';
 import { useQuery } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router';
+import { useSession } from '../../auth/services/sessionContext';
+import { actorDisplayName } from '../../auth/services/session';
 import { DataTable } from '../../common/components/DataTable';
 import { useAppFeedback } from '../../common/components/feedbackContext';
 import { formatInstant } from '../../common/format/dates';
@@ -28,6 +30,7 @@ function eventDetails(event: AuditEvent, copy: typeof translations['pt-BR']['set
 
 export function BatchAuditTab({ batchUuid, active, receivableUuid }: { batchUuid: string; active: boolean; receivableUuid?: string }) {
   const copy = translations[locale].settlement.audit;
+  const { identity } = useSession();
   const [params, setParams] = useSearchParams();
   const api = useApiClient();
   const { beginLoading } = useAppFeedback();
@@ -62,20 +65,19 @@ export function BatchAuditTab({ batchUuid, active, receivableUuid }: { batchUuid
     }, { preventScrollReset: true });
   }
 
-  return <Stack spacing={1.5} sx={{ minWidth: 0 }}>
+  return <Stack spacing={1.5} sx={{ minWidth: 0, minHeight: 0, flex: 1, overflow: 'hidden' }}>
     <Stack direction="row" justifyContent="space-between" alignItems="center" gap={1}>
       <Typography component="h2" variant="h2">{copy.title}</Typography>
       <Stack direction="row" gap={1} useFlexGap flexWrap="wrap">
         {receivableUuid && <Button onClick={clearFilter}>{copy.clearFilter}</Button>}
-        <Button disabled={!events.data || events.isFetching} onClick={() => { void events.refetch(); }}>{copy.refresh}</Button>
       </Stack>
     </Stack>
     {receivableUuid && <Typography variant="body2" color="text.secondary">{copy.filtered}</Typography>}
     {events.data && <DataTable label={copy.title} rows={events.data.items} getRowKey={event => event.uuid}
-      emptyMessage={copy.empty} maxHeight="clamp(220px, calc(100dvh - 560px), 560px)" columns={[
+      emptyMessage={copy.empty} fillHeight columns={[
         { id: 'registeredAt', label: copy.registeredAt, render: event => formatInstant(event.registeredAt) },
         { id: 'event', label: copy.event, render: event => translations[locale].settlement.audit.eventTypes[event.eventType] },
-        { id: 'actor', label: copy.actor, render: event => copy.actorValue(event.actor.subject, event.actor.issuer) },
+        { id: 'actor', label: copy.actor, render: event => actorDisplayName(event.actor, identity, translations[locale].common.unknownUser) },
         { id: 'receivable', label: copy.receivable, render: event => event.receivableUuid ?? copy.noReceivable },
         { id: 'details', label: copy.details, render: event => <Typography variant="body2" sx={{ minWidth: 240, maxWidth: 520, overflowWrap: 'anywhere' }}>{eventDetails(event, copy)}</Typography> },
       ]} pagination={{ ...filters, totalItems: events.data.totalItems, disabled: events.isFetching, onChange: changePage }} />}

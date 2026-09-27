@@ -84,9 +84,11 @@ test('consulta lote sem descartar intenção incerta; repetição permanece disp
   const intent = result.current.intent;
   await act(() => result.current.reconcile());
   expect(reads).toBe(1);
-  expect(result.current.reconciled).toBe(true);
-  expect(result.current.uncertain).toBe(true);
-  expect(result.current.intent).toEqual(intent);
+  await waitFor(() => {
+    expect(result.current.reconciled).toBe(true);
+    expect(result.current.uncertain).toBe(true);
+    expect(result.current.intent).toEqual(intent);
+  });
 });
 
 test('consulta solicitação persistida em 422 NENHUM_TITULO_APTO', async () => {

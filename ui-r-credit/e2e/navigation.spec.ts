@@ -31,7 +31,14 @@ test('menu recolhe e reabre cinco vezes; Escape restaura o foco', async ({ page 
     }
     const before = await main.boundingBox();
     await page.getByRole('button', { name: text.app.closeMenu, exact: true }).click();
-    await expect(page.getByRole('navigation')).not.toBeVisible();
+    if (info.project.name === 'desktop-chromium') {
+      const navigation = page.getByRole('navigation', { name: text.app.navigation });
+      await expect(navigation).toBeVisible();
+      await expect(navigation.getByRole('link', { name: text.batch.list.title, exact: true })).toBeVisible();
+      await expect.poll(async () => (await navigation.boundingBox())?.width).toBe(72);
+    } else {
+      await expect(page.getByRole('navigation')).not.toBeVisible();
+    }
     if (info.project.name === 'desktop-chromium') {
       await expect.poll(async () => (await main.boundingBox())?.width ?? 0).toBeGreaterThan(before?.width ?? 0);
     }
@@ -40,7 +47,12 @@ test('menu recolhe e reabre cinco vezes; Escape restaura o foco', async ({ page 
   await page.getByRole('navigation').getByRole('link', { name: text.batch.list.title, exact: true }).focus();
   await page.keyboard.press('Escape');
   await expect(page.getByRole('button', { name: text.app.openMenu, exact: true })).toBeFocused();
-  await expect(page.getByRole('navigation')).not.toBeVisible();
+  if (info.project.name === 'desktop-chromium') {
+    await expect(page.getByRole('navigation', { name: text.app.navigation })).toBeVisible();
+    await expect.poll(async () => (await page.getByRole('navigation').boundingBox())?.width).toBe(72);
+  } else {
+    await expect(page.getByRole('navigation')).not.toBeVisible();
+  }
 });
 
 test('preserva consulta e scroll ao voltar pelo menu e pelo histórico', async ({ page }) => {
@@ -98,7 +110,12 @@ test('layout adapta larguras, texto ampliado e movimento reduzido', async ({ pag
     }
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
     await page.getByRole('button', { name: text.app.closeMenu, exact: true }).click();
-    await expect(page.getByRole('navigation')).not.toBeVisible();
+    if (width >= 900) {
+      await expect(page.getByRole('navigation', { name: text.app.navigation })).toBeVisible();
+      await expect.poll(async () => (await page.getByRole('navigation').boundingBox())?.width).toBe(72);
+    } else {
+      await expect(page.getByRole('navigation')).not.toBeVisible();
+    }
   }
   await page.setViewportSize({ width: 683, height: 384 });
   await page.addStyleTag({ content: 'html { font-size: 200%; }' });

@@ -3,6 +3,7 @@ import { Button, Stack, TextField } from '@mui/material';
 import { z } from 'zod';
 import { AppDialog } from '../../common/components/AppDialog';
 import { CnpjField } from '../../common/components/CnpjField';
+import { RefreshButton } from '../../common/components/RefreshButton';
 import { useAppFeedback } from '../../common/components/feedbackContext';
 import { useApiClient } from '../../common/http/useApiClient';
 import { ApiError } from '../../common/http/client';
@@ -61,8 +62,8 @@ export function AssignorEditor({ open, initial, onClose, onExited, refreshList, 
   }
   return <AppDialog open={open} closeDisabled={pending} closeVariant="text" title={initial ? text.edit : text.create} onClose={onClose} onExited={onExited} closeLabel={text.cancel}
     actions={<>
-      {((conflict && !latest) || (committed && !refreshed)) && <Button disabled={pending} onClick={() => { void reviewOrRefresh(); }}>
-        {committed ? text.refreshSaved : text.review}</Button>}
+      {committed && !refreshed && <RefreshButton label={text.refreshSaved} disabled={pending} onClick={() => { void reviewOrRefresh(); }} />}
+      {conflict && !latest && <Button disabled={pending} onClick={() => { void reviewOrRefresh(); }}>{text.review}</Button>}
       <Button type="submit" form={formId} variant="contained" disabled={!open || pending || committed || (conflict && !latest)}>
         {latest ? text.saveReviewed : text.save}</Button>
     </>}>

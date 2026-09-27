@@ -3,6 +3,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { Box, Button, Checkbox, Chip, Stack, TextField, Typography } from '@mui/material';
 import { AppDialog } from '../../common/components/AppDialog';
 import { DataTable } from '../../common/components/DataTable';
+import { TableActionButton } from '../../common/components/TableActionButton';
 import { formatCivilDate, formatInstant } from '../../common/format/dates';
 import { formatDecimal, moneyFormat, rateFormat } from '../../common/format/decimal';
 import { can } from '../../auth/services/session';
@@ -135,11 +136,12 @@ export function FailedReceivablesTable({ batch, rows, totalItems, pagination, on
     { id: 'processing', label: copy.status, render: (item: Receivable) => <Stack spacing={0.5} alignItems="flex-start">
       <Typography variant="body2">{copy.statuses[item.processing.status]}</Typography>
       {item.processing.hasError && <Chip size="small" color="error" variant="outlined" label={copy.errorFlag} />}
-      {item.processing.failure && <Button size="small" onClick={() => onViewFailure(item.uuid, item.externalReference, item.processing.failure!)}>{copy.failure}</Button>}
+      {item.processing.failure && <TableActionButton label={copy.failure} icon="failure"
+        onClick={() => onViewFailure(item.uuid, item.externalReference, item.processing.failure!)} />}
     </Stack> },
   ];
 
-  return <Stack spacing={1.5} sx={{ minWidth: 0 }}>
+  return <Stack spacing={1.5} sx={{ minWidth: 0, minHeight: 0, flex: 1, overflow: 'hidden' }}>
     <Stack direction={{ xs: 'column', sm: 'row' }} useFlexGap flexWrap="wrap" alignItems={{ sm: 'center' }} justifyContent="space-between" gap={1}>
       <Typography component="h2" variant="h2">{copy.receivables}</Typography>
       <Stack direction="row" useFlexGap flexWrap="wrap" gap={1}>
@@ -147,12 +149,11 @@ export function FailedReceivablesTable({ batch, rows, totalItems, pagination, on
           onClick={openDialog}>
           {controller.uncertain ? text.resume : text.action(failureCount)}
         </Button>}
-        <Button disabled={pagination.disabled} onClick={onRefresh}>{copy.refreshItems}</Button>
       </Stack>
     </Stack>
     {batch.status === 'PENDING' && authorized && <Typography variant="body2" color="text.secondary" role="status">{text.pendingBatch}</Typography>}
     <DataTable label={copy.receivables} rows={rows} getRowKey={item => item.uuid} emptyMessage={copy.emptyItems}
-      maxHeight="clamp(160px, calc(100dvh - 640px), 500px)" columns={columns}
+      fillHeight columns={columns}
       pagination={{ ...pagination, totalItems, onChange: onPageChange }} />
 
     {authorized && <AppDialog open={dialogOpen} title={text.confirmTitle} onClose={closeDialog} onExited={() => { dialogClosing.current = false; }}

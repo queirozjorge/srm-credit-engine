@@ -4,13 +4,13 @@ import { ApiError } from '../../common/http/client';
 import { useAppFeedback } from '../../common/components/feedbackContext';
 import { useSession } from '../../auth/services/sessionContext';
 import { can } from '../../auth/services/session';
-import { batchDetailSchema, type BatchDetail } from '../../batch/services/contracts';
+import { batchDetailSchema, type BatchDetail, type BatchSummary } from '../../batch/services/contracts';
 import { requestSchema } from './contracts';
 import { acceptRequest } from './settlementCache';
 import { locale, translations } from '../../i18n/pt-BR';
 interface Attempt { key: string | null; pending: boolean; uncertain: boolean; checked: boolean; previousRequest: string | null }
 const empty: Attempt = { key: null, pending: false, uncertain: false, checked: false, previousRequest: null };
-export function useSettlement(batch: BatchDetail) {
+export function useSettlement(batch: Pick<BatchSummary, 'uuid' | 'status'> & Partial<Pick<BatchDetail, 'activeRequest'>>) {
   const api = useApiClient(); const cache = useQueryClient(); const { identity, session } = useSession(); const { beginLoading, showWarning } = useAppFeedback();
   const sessionSignal = session.signal();
   const text = translations[locale].settlement.flow; const key = ['settlement', 'attempt', batch.uuid];
@@ -35,11 +35,11 @@ export function useSettlement(batch: BatchDetail) {
   }
   async function submit() {
     const state = current(); const batchKey = ['batches', 'detail', batch.uuid];
-    const latest = cache.getQueryData<BatchDetail>(batchKey) ?? batch;
-    if (!can(identity, 'settle') || state.pending || latest.status !== 'READY' || (state.uncertain && !state.checked)) return false;
-    if (!cache.getQueryData<BatchDetail>(batchKey)) cache.setQueryData(batchKey, latest);
+    const latest = cache.getQueryData<BatchDetail>(batchKey);
+    const latestStatus = latest?.status ?? batch.status;
+    if (!can(identity, 'settle') || state.pending || latestStatus !== 'READY' || (state.uncertain && !state.checked)) return false;
     const idempotencyKey = state.uncertain && state.key ? state.key : crypto.randomUUID();
-    update({ key: idempotencyKey, pending: true, previousRequest: latest.activeRequest?.uuid ?? null, checked: false });
+    update({ key: idempotencyKey, pending: true, previousRequest: latest?.activeRequest?.uuid ?? batch.activeRequest?.uuid ?? null, checked: false });
     const end = beginLoading();
     try {
       const { data } = await api.request(`/api/batches/${batch.uuid}/settlements`, { method: 'POST', idempotencyKey, statuses: [200, 202],

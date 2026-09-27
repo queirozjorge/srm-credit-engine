@@ -4,7 +4,7 @@ import { batchStatusSchema, itemCountsSchema, settlementRequestSchema, settlemen
 import { receivableInputSchema, previewItemSchema } from './receivableContracts';
 export const batchStatus = batchStatusSchema;
 export { itemCountsSchema };
-export const batchSummarySchema = z.object({ uuid, source: z.enum(['FORM', 'CSV', 'CNAB']), status: batchStatus, itemCount: count.min(1).max(1000), assignorCount: count, soleAssignor: z.object({ uuid, name: z.string() }).nullable(), faceValueBrl: money, registeredAt: instant, counts: itemCountsSchema })
+export const batchSummarySchema = z.object({ uuid, source: z.enum(['FORM', 'CSV', 'CNAB']), status: batchStatus, itemCount: count.min(1).max(1000), assignorCount: count, soleAssignor: z.object({ uuid, name: z.string() }).nullable(), representativeExternalReference: z.string().min(1), faceValueBrl: money, registeredAt: instant, counts: itemCountsSchema })
   .refine(batch => batch.counts.ready + batch.counts.pending + batch.counts.settled + batch.counts.failed === batch.itemCount)
   .refine(batch => batch.status === 'READY' ? batch.counts.ready === batch.itemCount
     : batch.status === 'PENDING' ? batch.counts.ready === 0 && batch.counts.pending > 0

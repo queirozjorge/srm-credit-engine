@@ -59,7 +59,7 @@ Removida a proibição de injeção por construtor. Injeção por construtor e p
 
 ## 4. Evidências e validações pendentes
 
-O teste de infraestrutura `scripts/infra-smoke-test.py` validou a inicialização reproduzível, o gateway HTTPS, a autenticação OIDC do realm de demonstração, os limites e erros HTTP, a persistência dos volumes e a ausência de credenciais nos logs. Os testes de backend cobrem readiness do Actuator e bloqueio do endpoint de ambiente; não comprovam regras financeiras.
+O teste de infraestrutura `infra/scripts/infra-smoke-test.py` validou a inicialização reproduzível, o gateway HTTPS, a autenticação OIDC do realm de demonstração, os limites e erros HTTP, a persistência dos volumes e a ausência de credenciais nos logs. Os testes de backend cobrem readiness do Actuator e bloqueio do endpoint de ambiente; não comprovam regras financeiras.
 
 Continuam pendentes testes de golden cases financeiros, concorrência e recuperação da liquidação, rollback isolado por título, reprocessamento seletivo auditado, aprovação cambial, medições de carga do worker e diagramas ER/C4. As evidências devem ser associadas às decisões quando essas funcionalidades forem implementadas. A validação do Compose é local e não demonstra disponibilidade ou segurança de produção.
 
@@ -95,4 +95,4 @@ O modelo separa dados imutáveis do título, estado operacional atual, tentativa
 
 Para esta entrega, permanece no máximo uma solicitação pendente por lote; os títulos nela são processados independentemente. O operador pode selecionar falhos para nova tentativa quando a solicitação terminar, com justificativa e novas condições. Essa escolha simplifica o controle de seleção sem reintroduzir atomicidade financeira do lote. Campos financeiros do título continuam imutáveis e cadastro/importação continuam integrais.
 
-Esta revisão altera documentação, não código, migrations, tópicos, mocks ou telas. A infraestrutura ainda referencia `credit-lot`/`credit-lot.dlq` em `infra/kafka/create-topics.sh` e `scripts/infra-smoke-test.py`; esses arquivos não foram alterados nesta revisão documental. A implementação deverá provisionar os novos tópicos, ajustar produtor/consumer, persistência e UI antes da homologação. As evidências de frontend anteriores não comprovam o novo fluxo.
+Esta revisão altera documentação, não código, migrations, tópicos, mocks ou telas. A infraestrutura ainda referencia `credit-lot`/`credit-lot.dlq` em `infra/kafka/create-topics.sh` e `infra/scripts/infra-smoke-test.py`; esses arquivos não foram alterados nesta revisão documental. A implementação deverá provisionar os novos tópicos, ajustar produtor/consumer, persistência e UI antes da homologação. As evidências de frontend anteriores não comprovam o novo fluxo.

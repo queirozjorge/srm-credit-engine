@@ -1,25 +1,54 @@
-import { useState } from 'react';
-import { Button, Stack } from '@mui/material';
+import { useEffect, useRef, useState } from 'react';
+import { Box, Stack, useMediaQuery } from '@mui/material';
 import { DataTable } from '../../common/components/DataTable';
+import { TableActionButton } from '../../common/components/TableActionButton';
 import { formatDecimal, moneyFormat } from '../../common/format/decimal';
 import { formatCivilDate } from '../../common/format/dates';
 import { locale, translations } from '../../i18n/pt-BR';
 import type { DraftItem } from '../services/manualBatch';
-export function DraftReceivables({ items, editable, onEdit, onRemove }: {
-  items: DraftItem[]; editable: boolean; onEdit: (item: DraftItem) => void; onRemove: (id: string) => void;
+export function DraftReceivables({ items, editable, onEdit, onRemove, compact = false }: {
+  items: DraftItem[]; editable: boolean; onEdit: (item: DraftItem) => void; onRemove: (id: string) => void; compact?: boolean;
 }) {
-  const text = translations[locale].batch; const [pagination, setPagination] = useState({ page: 1, size: 5 });
+  const text = translations[locale].batch; const region = useRef<HTMLDivElement>(null);
+  const desktop = useMediaQuery(theme => theme.breakpoints.up('md'));
+  const [pagination, setPagination] = useState({ page: 1, size: 5 }); const [capacity, setCapacity] = useState(5);
+  const selectedSize = useRef(false);
+  useEffect(() => {
+    if (compact || !desktop) { setCapacity(5); return; }
+    const element = region.current;
+    if (!element || typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(entries => {
+      const height = entries[0]?.contentRect.height ?? element.clientHeight;
+      // Reserve room for the header, pagination controls and vertical cell padding.
+      const nextCapacity = Math.max(1, Math.min(50, Math.floor((height - 112) / 48)));
+      setCapacity(current => current === nextCapacity ? current : nextCapacity);
+    });
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [compact, desktop]);
+  useEffect(() => {
+    if (selectedSize.current) return;
+    setPagination(current => current.size === capacity ? current : { page: 1, size: capacity });
+  }, [capacity]);
   const page = Math.min(pagination.page, Math.max(1, Math.ceil(items.length / pagination.size)));
-  return <DataTable label={text.manual.draftTable} rows={items.slice((page - 1) * pagination.size, page * pagination.size)} getRowKey={row => row.localId}
-    maxHeight={360} emptyMessage={text.manual.empty} columns={[
+  const pageSizes = [...new Set([capacity, 5, 10, 20, 50])].sort((left, right) => left - right);
+  return <Box ref={region} sx={{ gridArea: 'receivables', minWidth: 0, minHeight: compact ? 'auto' : { xs: 'auto', md: 0 },
+    display: compact ? 'block' : 'flex', overflow: compact ? 'visible' : { xs: 'visible', md: 'hidden' } }}>
+    <DataTable label={text.manual.draftTable} rows={items.slice((page - 1) * pagination.size, page * pagination.size)} getRowKey={row => row.localId}
+    fillHeight={!compact} maxHeight={compact ? 'none' : undefined} emptyMessage={text.manual.empty} columns={[
       { id: 'assignor', label: text.manual.assignor, render: row => row.assignorName },
       { id: 'reference', label: text.reference, render: row => <span style={{ overflowWrap: 'anywhere' }}>{row.externalReference}</span> },
       { id: 'type', label: text.type, render: row => text.types[row.type] },
       { id: 'amount', label: text.faceValue, render: row => formatDecimal(row.faceValueBrl, moneyFormat), align: 'right' },
       { id: 'due', label: text.dueDate, render: row => formatCivilDate(row.dueDate) },
       { id: 'currency', label: text.currency, render: row => text.currencies[row.paymentCurrency] },
-      ...(editable ? [{ id: 'actions', label: text.actions, render: (row: DraftItem) => <Stack direction="row">
-        <Button onClick={() => onEdit(row)}>{text.manual.editItem}</Button><Button onClick={() => onRemove(row.localId)}>{text.manual.removeItem}</Button>
+      ...(editable ? [{ id: 'actions', label: text.actions, align: 'center' as const, render: (row: DraftItem) => <Stack direction="row">
+        <TableActionButton label={text.manual.editItem} icon="edit" onClick={() => onEdit(row)} />
+        <TableActionButton label={text.manual.removeItem} icon="remove" onClick={() => onRemove(row.localId)} />
       </Stack> }] : []),
-    ]} pagination={{ ...pagination, page, totalItems: items.length, onChange: setPagination }} />;
+    ]} pagination={{ ...pagination, page, pageSizes, totalItems: items.length, onChange: next => {
+      if (next.size !== pagination.size) selectedSize.current = true;
+      setPagination(next);
+    } }} />
+  </Box>;
 }

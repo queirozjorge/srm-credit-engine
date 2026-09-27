@@ -2,7 +2,7 @@
 
 **Status: estrutura inicial; revisão ainda não realizada.**
 
-Objeto: código do endpoint de liquidação apresentado no Anexo A do [desafio técnico](desafio-tecnico-srm-credit-engine-v2.md). Esta revisão será sobre o trecho fornecido pelo desafio, sem pressupor que ele faz parte da implementação do projeto.
+Objeto: código do endpoint de liquidação apresentado no Anexo A do [desafio técnico](docs/desafio-tecnico-srm-credit-engine-v2.md). Esta revisão será sobre o trecho fornecido pelo desafio, sem pressupor que ele faz parte da implementação do projeto.
 
 ## Parecer
 

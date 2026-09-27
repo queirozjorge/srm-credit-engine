@@ -68,7 +68,7 @@ workflow:
     enabled: ${WORKFLOW_CONSUMER_ENABLED:true}
     concurrency: ${WORKFLOW_CONSUMER_CONCURRENCY:3}
   schema:
-    expected-version: "4"
+    expected-version: "5"
     check-enabled: true
 
 logging:

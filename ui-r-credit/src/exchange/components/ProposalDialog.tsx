@@ -3,7 +3,7 @@ import { Button, Chip, Stack, TextField, Typography } from '@mui/material';
 import { AppDialog } from '../../common/components/AppDialog';
 import { DecimalField } from '../../common/components/DecimalField';
 import { useSession } from '../../auth/services/sessionContext';
-import { canDecide } from '../../auth/services/session';
+import { actorDisplayName, canDecide } from '../../auth/services/session';
 import { formatDecimal, rateFormat } from '../../common/format/decimal';
 import { formatInstant } from '../../common/format/dates';
 import { createProposalSchema, type ExchangeProposal } from '../services/contracts';
@@ -42,10 +42,10 @@ export function ProposalDialog({ open, initial, base, onClose, onExited, refresh
       {row ? <>
         <Chip label={mutation.committed ? text.decisionSent : text.statuses[row.status]} sx={{ alignSelf: 'flex-start' }} variant="outlined" />
         <Typography variant="h2" component="p">{text.rate}: {formatDecimal(row.proposedRate, rateFormat)}</Typography>
-        <Typography>{text.author}: {row.requestedBy.subject} · {row.requestedBy.issuer}</Typography>
+        <Typography>{text.author}: {actorDisplayName(row.requestedBy, identity, translations[locale].common.unknownUser)}</Typography>
         <Typography>{text.registered}: {formatInstant(row.registeredAt)}</Typography>
         <Typography sx={{ whiteSpace: 'pre-wrap' }}>{row.justification}</Typography>
-        {row.decision && <><Typography>{text.decidedBy}: {row.decision.decidedBy.subject}</Typography><Typography>{text.decidedAt}: {formatInstant(row.decision.decidedAt)}</Typography>
+        {row.decision && <><Typography>{text.decidedBy}: {actorDisplayName(row.decision.decidedBy, identity, translations[locale].common.unknownUser)}</Typography><Typography>{text.decidedAt}: {formatInstant(row.decision.decidedAt)}</Typography>
           {row.decision.reason && <Typography sx={{ whiteSpace: 'pre-wrap' }}>{row.decision.reason}</Typography>}</>}
         {row.status === 'PENDING' && !canDecide(identity, row.requestedBy) && <Typography>{text.own}</Typography>}
         {allowed && <TextField label={text.reason} value={reason} inputRef={reasonInput} onChange={event => setReason(event.target.value)} disabled={locked} multiline minRows={2}

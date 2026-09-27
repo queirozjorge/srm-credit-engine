@@ -6,13 +6,16 @@ import type { Session } from './session';
 
 const destinationKey = 'srm.auth.returnTo';
 const claims = z.object({ iss: z.string(), sub: z.string().min(1), exp: z.number(), nbf: z.number().optional(),
+  name: z.string().optional(), given_name: z.string().optional(), family_name: z.string().optional(), preferred_username: z.string().optional(),
   azp: z.literal('ui-r-credit'), aud: z.union([z.string(), z.array(z.string())]),
   realm_access: z.object({ roles: z.array(z.string()) }).optional() });
 export function identityFromToken(value: unknown, issuer: string, now = Date.now() / 1000) {
   const data = claims.parse(value);
   if (data.iss !== issuer || data.exp <= now || (data.nbf !== undefined && data.nbf > now) ||
       !(Array.isArray(data.aud) ? data.aud : [data.aud]).includes('spe-j-engine')) throw new Error('Sessão incompatível.');
-  return { issuer: data.iss, subject: data.sub, roles: (data.realm_access?.roles ?? []).filter((role): role is 'OPERADOR' | 'GESTOR' => role === 'OPERADOR' || role === 'GESTOR') };
+  const displayName = data.name?.trim() || [data.given_name, data.family_name].filter(Boolean).join(' ').trim() || data.preferred_username?.trim();
+  return { issuer: data.iss, subject: data.sub, roles: (data.realm_access?.roles ?? []).filter((role): role is 'OPERADOR' | 'GESTOR' => role === 'OPERADOR' || role === 'GESTOR'),
+    ...(displayName ? { displayName } : {}) };
 }
 export function takeDestination(storage: Storage = sessionStorage) {
   const raw = storage.getItem(destinationKey); storage.removeItem(destinationKey);
@@ -59,7 +62,7 @@ export function createOidc(session: Session, adapter: OidcAdapter = new Keycloak
   session.configureAuthentication({ clear, prepare,
     login: async destination => {
       sessionStorage.setItem(destinationKey, JSON.stringify({ path: safeReturnTo(destination), at: Date.now() }));
-      try { redirect(await adapter.createLoginUrl({ redirectUri: root, locale: 'pt-BR' })); }
+      try { redirect(await adapter.createLoginUrl({ redirectUri: root, locale: 'pt-BR', scope: 'openid profile' })); }
       catch (error) { sessionStorage.removeItem(destinationKey); throw error; }
     },
     logout: async () => { const url = adapter.createLogoutUrl({ redirectUri: root }); session.signOut(); sessionStorage.removeItem(destinationKey); redirect(url); },

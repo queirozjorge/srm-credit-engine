@@ -141,7 +141,7 @@ decided_at=?,date_updated=?,version=version+1 WHERE uuid=? AND status='PENDING' 
       decision =
           new ExchangeProposal.Decision(
               status,
-              new Actor(row.getString("decided_by_issuer"), row.getString("decided_by_subject")),
+              new Actor(row.getString("decided_by_issuer"), row.getString("decided_by_subject"), row.getString("decided_by_display_name")),
               row.getTimestamp("decided_at").toInstant(),
               row.getString("decision_reason"),
               quote);
@@ -151,13 +151,18 @@ decided_at=?,date_updated=?,version=version+1 WHERE uuid=? AND status='PENDING' 
         row.getBigDecimal("proposed_rate").stripTrailingZeros().toPlainString(),
         row.getString("justification"),
         status,
-        new Actor(row.getString("requested_by_issuer"), row.getString("requested_by_subject")),
+        new Actor(row.getString("requested_by_issuer"), row.getString("requested_by_subject"), row.getString("requested_by_display_name")),
         row.getTimestamp("date_register").toInstant(),
         Long.toString(row.getLong("version")),
         decision);
   }
 
   private static final String PROPOSAL_SELECT =
-      "SELECT p.*,q.uuid AS quote_uuid,q.rate,q.effective_from FROM exchange_rate_proposal p LEFT"
-          + " JOIN exchange_rate q ON q.proposal_uuid=p.uuid";
+      "SELECT p.*,q.uuid AS quote_uuid,q.rate,q.effective_from,requested_event.actor_display_name"
+          + " AS requested_by_display_name,decided_event.actor_display_name AS decided_by_display_name"
+          + " FROM exchange_rate_proposal p LEFT JOIN exchange_rate q ON q.proposal_uuid=p.uuid"
+          + " LEFT JOIN audit_event requested_event ON requested_event.proposal_uuid=p.uuid"
+          + " AND requested_event.event_type='EXCHANGE_RATE_PROPOSED'"
+          + " LEFT JOIN audit_event decided_event ON decided_event.proposal_uuid=p.uuid"
+          + " AND decided_event.event_type IN ('EXCHANGE_RATE_APPROVED','EXCHANGE_RATE_REJECTED')";
 }

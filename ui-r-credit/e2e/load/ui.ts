@@ -1,7 +1,6 @@
 import { expect, type Page, type Response } from '@playwright/test';
 import { translations, locale } from '../../src/i18n/pt-BR';
 import { batchCreatedSchema, previewSchema } from '../../src/batch/services/contracts';
-import { simulationSchema } from '../../src/pricing/services/contracts';
 import type { LoadAssignor } from '../../tests/load/dataset';
 
 const text = translations[locale];
@@ -90,14 +89,8 @@ export async function importBatch(page: Page, file: string, format: 'CSV' | 'CNA
 }
 
 export async function prepareSettlement(page: Page) {
-  await page.getByRole('tab', { name: text.batch.detailTabs.requests, exact: true }).click();
-  const simulationResponse = responseFor(page, 'POST', '/simulations');
-  await page.getByRole('button', { name: text.pricing.refresh, exact: true }).click();
-  const response = await simulationResponse;
-  expect(response.status()).toBe(200);
-  simulationSchema.parse(await response.json());
-  await expect(page.getByText(text.pricing.current, { exact: true })).toBeVisible();
-  await page.getByRole('button', { name: text.settlement.flow.requestAction, exact: true }).click();
+  await page.locator('#main-navigation').getByRole('link', { name: text.batch.list.title, exact: true }).click();
+  await page.getByRole('button', { name: text.batch.liquidate, exact: true }).first().click();
   await expect(page.getByRole('dialog', { name: text.settlement.flow.confirmTitle })).toBeVisible();
 }
 
