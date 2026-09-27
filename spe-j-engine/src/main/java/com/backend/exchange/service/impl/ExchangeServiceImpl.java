@@ -118,7 +118,7 @@ public class ExchangeServiceImpl implements IExchangeService {
     }
     var proposal = proposal(uuid);
     var actor = actors.current();
-    if (actor.equals(proposal.requestedBy()))
+    if (actor.sameIdentity(proposal.requestedBy()))
       throw new ApiException(
           403, "AUTOAPROVACAO_PROIBIDA", "A decisão exige um gestor diferente do solicitante.");
     if (!"PENDING".equals(proposal.status()))

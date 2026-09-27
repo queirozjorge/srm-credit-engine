@@ -2,6 +2,8 @@ import { useState } from 'react';
 import { Button, Stack, TextField, Typography } from '@mui/material';
 import { useQuery, keepPreviousData } from '@tanstack/react-query';
 import { DataTable } from '../../common/components/DataTable';
+import { RefreshButton } from '../../common/components/RefreshButton';
+import { TableActionButton } from '../../common/components/TableActionButton';
 import { useApiClient } from '../../common/http/useApiClient';
 import { useAppFeedback } from '../../common/components/feedbackContext';
 import { formatCnpj } from '../../common/format/document';
@@ -23,14 +25,16 @@ export function AssignorPicker({ enabled, selected, onSelect, activeOnly = true 
       <TextField type="search" size="small" label={text.search} value={search} disabled={!enabled}
         onChange={event => setSearch(event.target.value)} sx={{ flex: '1 1 220px' }} />
       <Button disabled={!enabled || query.isFetching} onClick={() => setFilters({ ...filters, q: normalizeSearch(search), page: 1 })}>{text.searchAction}</Button>
-      <Button disabled={!enabled || query.isFetching} onClick={() => { void query.refetch(); }}>{text.retry}</Button>
+      <RefreshButton label={text.retry} disabled={!enabled || query.isFetching} onClick={() => { void query.refetch(); }} />
     </Stack>
     {query.data && <DataTable label={text.choose} rows={query.data.items} getRowKey={row => row.uuid} emptyMessage={activeOnly ? text.noActive : translations[locale].common.empty} maxHeight={220}
       columns={[
         { id: 'name', label: text.name, render: row => row.name },
         { id: 'document', label: text.document, render: row => formatCnpj(row.documentNumber) },
-        { id: 'action', label: text.actions, render: row => <Button disabled={!enabled || query.isFetching || (activeOnly && row.deleted)} aria-pressed={selected === row.uuid}
-          onClick={() => onSelect(row)}>{selected === row.uuid ? text.selected : text.select}</Button> },
+        { id: 'action', label: text.actions, align: 'center', render: row => <TableActionButton
+          label={selected === row.uuid ? text.selected : text.select} icon={selected === row.uuid ? 'selected' : 'select'}
+          disabled={!enabled || query.isFetching || (activeOnly && row.deleted)} pressed={selected === row.uuid}
+          onClick={() => onSelect(row)} /> },
       ]} pagination={{ ...filters, totalItems: query.data.totalItems, disabled: !enabled || query.isFetching,
         onChange: page => setFilters({ ...filters, ...page }) }} />}
   </Stack>;

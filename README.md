@@ -164,7 +164,7 @@ Se a stack não ficar saudável, consulte `docker compose ps --all` e os logs do
 
 Para parar e remover containers/rede, mantendo os dados e o certificado, execute `docker compose down`. Para parar sem remover containers, use `docker compose stop`; a próxima execução de `docker compose up` inicia a stack novamente. **Remover dados é explícito e destrutivo:** `docker compose down --volumes` apaga PostgreSQL, Kafka e certificado local.
 
-Com Docker e Python 3 em execução, valide a infraestrutura com `python3 scripts/infra-smoke-test.py`. O teste reinicia a stack, preserva os volumes nomeados e deixa os serviços em execução ao terminar.
+Com Docker e Python 3 em execução, valide a infraestrutura com `python3 infra/scripts/infra-smoke-test.py`. O teste reinicia a stack, preserva os volumes nomeados e deixa os serviços em execução ao terminar.
 
 O ambiente Compose é para desenvolvimento local, não configuração de produção. Ele sobe gateway, Keycloak, PostgreSQL, Kafka, engine e duas instâncias do workflow no mesmo grupo de consumidores. O engine valida JWT, aplica migrations e publica solicitações pela outbox; as instâncias do workflow distribuem o consumo e liquidam os títulos. As credenciais de teste são configuradas localmente e nunca devem ser registradas em logs.
 
@@ -231,7 +231,7 @@ A suíte de componentes usa uma fixture isolada no Vite, porta 5176, sem adicion
 - [DECISIONS.md](DECISIONS.md) — decisões arquiteturais, alternativas, custos e cortes de escopo.
 - [REVIEW.md](REVIEW.md) — estrutura inicial para a revisão do Anexo A; análise pendente.
 - [AI_USAGE.md](AI_USAGE.md) — registro inicial da colaboração com IA e evidências a completar.
-- [Desafio técnico](desafio-tecnico-srm-credit-engine-v2.md) — enunciado e requisitos de avaliação.
+- [Desafio técnico](docs/desafio-tecnico-srm-credit-engine-v2.md) — enunciado e requisitos de avaliação.
 
 
 ### Acesso real e integração de APIs

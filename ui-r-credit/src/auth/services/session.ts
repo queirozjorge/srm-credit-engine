@@ -1,6 +1,13 @@
 import { z } from 'zod';
-export const identitySchema = z.object({ issuer: z.string().min(1), subject: z.string().min(1), roles: z.array(z.enum(['OPERADOR', 'GESTOR'])) });
+export const identitySchema = z.object({ issuer: z.string().min(1), subject: z.string().min(1), roles: z.array(z.enum(['OPERADOR', 'GESTOR'])), displayName: z.string().trim().min(1).optional() });
 export type Identity = z.infer<typeof identitySchema>;
+export function actorDisplayName(actor: { issuer: string; subject: string; displayName?: string | null }, identity: Identity | null, unknownName: string) {
+  const storedName = actor.displayName?.trim();
+  if (storedName) return storedName;
+  const currentName = identity?.issuer === actor.issuer && identity.subject === actor.subject ? identity.displayName?.trim() : undefined;
+  if (currentName) return currentName;
+  return /^[\da-f]{8}(?:-[\da-f]{4}){3}-[\da-f]{12}$/i.test(actor.subject) ? unknownName : actor.subject;
+}
 export type Permission = 'read' | 'assignorWrite' | 'batchWrite' | 'simulate' | 'settle' | 'propose' | 'decide';
 export function can(identity: Identity | null, permission: Permission) {
   if (!identity) return false;
@@ -36,7 +43,7 @@ export function createSession() {
     prepare: async () => { await authentication?.prepare(); },
     refresh: (next: Identity, accessToken: string) => {
       const valid = identitySchema.parse(next);
-      if (identity?.issuer === valid.issuer && identity.subject === valid.subject && [...identity.roles].sort().join() === [...valid.roles].sort().join()) token = accessToken;
+      if (identity?.issuer === valid.issuer && identity.subject === valid.subject && identity.displayName === valid.displayName && [...identity.roles].sort().join() === [...valid.roles].sort().join()) token = accessToken;
       else change(valid, accessToken);
     },
     signOut: () => { authentication?.clear(); change(null, null); },

@@ -10,7 +10,7 @@ export const signedRate = z.string().regex(/^-?(0|[1-9]\d{0,11})(\.\d{1,12})?$/)
 export const term = z.string().regex(/^\d+(\.\d+)?$/);
 export const count = z.number().int().nonnegative().safe();
 export const currency = z.enum(['BRL', 'USD']);
-export const actor = z.object({ issuer: z.string().min(1), subject: z.string().min(1) });
+export const actor = z.object({ issuer: z.string().min(1), subject: z.string().min(1), displayName: z.string().trim().min(1).nullable().optional() });
 export const created = z.object({ uuid });
 export const totals = z.object({ faceValueBrl: money, presentValueBrl: money, discountBrl: money, paymentBrl: money, paymentUsd: money });
 export function pageOf<T extends z.ZodType>(item: T) {

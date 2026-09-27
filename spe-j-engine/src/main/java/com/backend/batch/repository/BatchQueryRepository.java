@@ -18,7 +18,11 @@ public class BatchQueryRepository {
 
   private static final String SUMMARY =
       """
-select b.*,x.assignor_count,x.sole_assignor_uuid,x.sole_assignor_name,x.face_value_brl
+select b.*,x.assignor_count,x.sole_assignor_uuid,x.sole_assignor_name,x.face_value_brl,
+       (select r2.external_reference from receivable r2 where r2.batch_uuid=b.uuid
+        order by r2.external_reference collate "C",r2.uuid limit 1) representative_external_reference,
+       (select ae.actor_display_name from audit_event ae where ae.batch_uuid=b.uuid
+        and ae.event_type='BATCH_CREATED') created_by_display_name
 from batch b join lateral (select count(distinct r.assignor_uuid) assignor_count,
 min(r.assignor_uuid::text) sole_assignor_uuid,min(a.name) sole_assignor_name,sum(r.face_value_brl) face_value_brl
 from receivable r join assignor a on a.uuid=r.assignor_uuid where r.batch_uuid=b.uuid) x on true
@@ -32,8 +36,9 @@ from receivable r join assignor a on a.uuid=r.assignor_uuid where r.batch_uuid=b
     params.put("offset", (long) (page - 1) * size);
     String where =
         " where (:q='' or b.uuid::text ilike '%'||:q||'%' or exists(select 1 from receivable r join"
-            + " assignor a on a.uuid=r.assignor_uuid where r.batch_uuid=b.uuid and a.name ilike"
-            + " '%'||:q||'%')) and (cast(:status as text) is null or b.status=:status)";
+            + " assignor a on a.uuid=r.assignor_uuid where r.batch_uuid=b.uuid and (a.name ilike"
+            + " '%'||:q||'%' or r.external_reference ilike '%'||:q||'%')))"
+            + " and (cast(:status as text) is null or b.status=:status)";
     long total = jdbc.queryForObject("select count(*) from batch b" + where, params, Long.class);
     return PageResponse.of(
         jdbc.query(
@@ -60,7 +65,9 @@ from receivable r join assignor a on a.uuid=r.assignor_uuid where r.batch_uuid=b
                       "issuer",
                       r.getString("created_by_issuer"),
                       "subject",
-                      r.getString("created_by_subject")));
+                      r.getString("created_by_subject"),
+                      "displayName",
+                      r.getString("created_by_display_name")));
               result.put("progressVersion", Long.toString(r.getLong("version")));
               result.put("activeRequestUuid", Rows.uuid(r, "active_request_uuid"));
               return result;
@@ -138,6 +145,8 @@ from receivable r join assignor a on a.uuid=r.assignor_uuid where r.batch_uuid=b
             : null,
         "faceValueBrl",
         Rows.money(r, "face_value_brl"),
+        "representativeExternalReference",
+        r.getString("representative_external_reference"),
         "registeredAt",
         Rows.instant(r, "date_register"),
         "counts",

@@ -1,19 +1,19 @@
-import { useEffect, useRef, useState } from 'react';
-import { Box, Button, Collapse, MenuItem, Stack, TextField, Typography, useMediaQuery } from '@mui/material';
-import { AssignorPicker } from '../../register/components/AssignorPicker';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { Box, Button, MenuItem, Stack, TextField, Typography } from '@mui/material';
+import { AssignorAutocomplete } from '../../register/components/AssignorAutocomplete';
 import { DecimalField } from '../../common/components/DecimalField';
 import { DateField } from '../../common/components/DateField';
 import { locale, translations } from '../../i18n/pt-BR';
 import { financialToday, inputOf, itemErrors, type DraftItem } from '../services/manualBatch';
 import type { ReceivableInput } from '../services/receivableContracts';
 const empty: ReceivableInput = { assignorUuid: '', externalReference: '', type: 'DUPLICATA_MERCANTIL', faceValueBrl: '', dueDate: '', paymentCurrency: 'BRL' };
-export function ReceivableEditor({ initial, others, enabled, onSave, onCancel, onDraftChange }: {
-  initial: DraftItem | null; others: DraftItem[]; enabled: boolean; onSave: (item: DraftItem) => void; onCancel: () => void; onDraftChange?: (value: ReceivableInput) => void;
+export function ReceivableEditor({ initial, others, enabled, onSave, onDraftChange, reviewAction }: {
+  initial: DraftItem | null; others: DraftItem[]; enabled: boolean; onSave: (item: DraftItem) => boolean; onDraftChange?: (value: ReceivableInput) => void; reviewAction?: ReactNode;
 }) {
-  const text = translations[locale].batch; const copy = text.manual; const reduced = useMediaQuery('(prefers-reduced-motion: reduce)');
+  const text = translations[locale].batch; const copy = text.manual;
   const [draft, setDraft] = useState<ReceivableInput>(initial ? inputOf(initial) : empty);
   const [assignorName, setAssignorName] = useState(initial?.assignorName ?? '');
-  const [picking, setPicking] = useState(!initial); const [attempted, setAttempted] = useState(false);
+  const [attempted, setAttempted] = useState(false);
   const [invalidFocus, setInvalidFocus] = useState(0);
   const form = useRef<HTMLDivElement>(null); const errors = itemErrors(draft, others);
   useEffect(() => { if (invalidFocus) form.current?.querySelector<HTMLInputElement>('[aria-invalid="true"]')?.focus(); }, [invalidFocus]);
@@ -21,20 +21,22 @@ export function ReceivableEditor({ initial, others, enabled, onSave, onCancel, o
   function save() {
     if (!enabled) return;
     setAttempted(true);
-    if (errors.size) { if (errors.has('assignorUuid')) setPicking(true); setInvalidFocus(value => value + 1); return; }
-    onSave({ ...inputOf(draft), assignorName, localId: initial?.localId ?? crypto.randomUUID() });
+    if (errors.size) { setInvalidFocus(value => value + 1); return; }
+    const saved = onSave({ ...inputOf(draft), assignorName, localId: initial?.localId ?? crypto.randomUUID() });
+    if (saved && !initial) {
+      setDraft(empty);
+      setAssignorName('');
+      setAttempted(false);
+      onDraftChange?.(empty);
+    }
   }
   return <Stack ref={form} spacing={2}>
     <Typography component="h2" variant="h2">{initial ? copy.editItem : copy.addItem}</Typography>
-    <TextField label={copy.assignor} value={assignorName} required slotProps={{ input: { readOnly: true } }}
-      error={attempted && errors.has('assignorUuid')} helperText={attempted && errors.has('assignorUuid') ? copy.fields.assignorUuid : undefined} />
-    <Button sx={{ alignSelf: 'flex-start' }} disabled={!enabled} aria-expanded={picking} onClick={() => setPicking(!picking)}>{copy.chooseAssignor}</Button>
-    <Collapse in={picking} timeout={reduced ? 0 : 180}>
-      <AssignorPicker enabled={enabled && picking} selected={draft.assignorUuid} onSelect={row => {
-        update('assignorUuid', row.uuid); setAssignorName(row.name); setPicking(false);
-      }} />
-    </Collapse>
-    <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' }, gap: 2 }}>
+    <Box sx={{ display: 'grid', gridTemplateColumns: { xs: 'minmax(0, 1fr)', sm: 'repeat(2, minmax(0, 1fr))', md: 'repeat(3, minmax(0, 1fr))' }, gap: 2 }}>
+      <AssignorAutocomplete value={draft.assignorUuid} label={copy.assignor} placeholder={copy.chooseAssignor}
+        activeOnly required disabled={!enabled} error={attempted && errors.has('assignorUuid')}
+        helperText={attempted && errors.has('assignorUuid') ? copy.fields.assignorUuid : undefined}
+        onChange={(uuid, assignor) => { update('assignorUuid', uuid); setAssignorName(assignor?.name ?? ''); }} />
       <TextField label={text.reference} value={draft.externalReference} required disabled={!enabled}
         onChange={event => update('externalReference', event.target.value)} error={attempted && errors.has('externalReference')}
         helperText={attempted && errors.has('externalReference') ? copy.fields.externalReference : copy.referenceHint} />
@@ -51,7 +53,7 @@ export function ReceivableEditor({ initial, others, enabled, onSave, onCancel, o
     </Box>
     <Stack direction="row" gap={1} useFlexGap flexWrap="wrap">
       <Button variant="contained" disabled={!enabled} onClick={save}>{initial ? copy.saveItem : copy.addItem}</Button>
-      <Button disabled={!enabled} onClick={onCancel}>{copy.cancelItem}</Button>
+      {reviewAction}
     </Stack>
   </Stack>;
 }

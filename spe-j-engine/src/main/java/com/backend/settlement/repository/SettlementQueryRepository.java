@@ -18,8 +18,10 @@ public class SettlementQueryRepository {
 
   private static final String SELECT =
       """
-select q.*,e.proposal_uuid,x.* from settlement_request q
+select q.*,e.proposal_uuid,x.*,a.actor_display_name requested_by_display_name from settlement_request q
 left join exchange_rate e on e.uuid=q.exchange_rate_uuid
+left join audit_event a on a.request_uuid=q.uuid and a.event_type=case q.kind
+when 'INITIAL' then 'SETTLEMENT_REQUESTED' else 'SETTLEMENT_REPROCESS_REQUESTED' end
 join lateral(select coalesce(sum(r.face_value_brl),0) face_value_brl,
 coalesce(sum(s.present_value_brl),0) present_value_brl,coalesce(sum(s.discount_brl),0) discount_brl,
 coalesce(sum(s.payment_amount) filter(where s.payment_currency='BRL'),0) payment_brl,
@@ -88,7 +90,9 @@ from settlement s join receivable r on r.uuid=s.receivable_uuid where s.request_
             "issuer",
             r.getString("requested_by_issuer"),
             "subject",
-            r.getString("requested_by_subject")),
+            r.getString("requested_by_subject"),
+            "displayName",
+            r.getString("requested_by_display_name")),
         "snapshot",
         Views.of(
             "calculationDate",

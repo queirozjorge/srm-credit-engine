@@ -41,6 +41,7 @@ export function createBatchHandlers(seed: Scenario[] = [{ batch: batchFixture, i
       const items = parsed.data.items.map((item, index) => ({ ...item, externalReference: item.externalReference.trim(), uuid: crypto.randomUUID(), assignorName: assignors[index]!.name, processing: structuredClone(receivableFixture.processing) }));
       const batch: BatchDetail = { uuid, source: imported?.preview.source ?? 'FORM', status: 'READY', itemCount: items.length, counts: { ready: items.length, pending: 0, settled: 0, failed: 0 }, assignorCount: ids.size,
         soleAssignor: ids.size === 1 && first ? { uuid: first.uuid, name: first.name } : null,
+        representativeExternalReference: [...items].map(item => item.externalReference).sort((left, right) => left < right ? -1 : left > right ? 1 : 0)[0]!,
         faceValueBrl: totalFace(items), registeredAt: new Date().toISOString(), createdBy: { issuer: actor.issuer, subject: actor.subject }, activeRequest: null, settledTotals: { faceValueBrl: '0.00', presentValueBrl: '0.00', discountBrl: '0.00', paymentBrl: '0.00', paymentUsd: '0.00' }, progressVersion: '0' };
       scenarios.unshift({ batch, items });
       return HttpResponse.json({ uuid, status: 'READY' }, { status: 201, headers: { Location: `/api/batches/${uuid}` } });
@@ -51,8 +52,11 @@ export function createBatchHandlers(seed: Scenario[] = [{ batch: batchFixture, i
       if (status && !batchStatus.safeParse(status).success) return failure(400, 'REQUISICAO_INVALIDA');
       const q = params.get('q')?.trim().toLocaleLowerCase('pt-BR') ?? '';
       const rows = scenarios.filter(({ batch, items }) => (!status || batch.status === status) && (!q || batch.uuid.includes(q)
-        || items.some(item => item.assignorName.toLocaleLowerCase('pt-BR').includes(q))));
-      return paginated(request, rows.map(({ batch }) => batchSummarySchema.parse(batch)));
+        || items.some(item => item.assignorName.toLocaleLowerCase('pt-BR').includes(q)
+          || item.externalReference.toLocaleLowerCase('pt-BR').includes(q))));
+      return paginated(request, rows.map(({ batch, items }) => batchSummarySchema.parse({ ...batch,
+        representativeExternalReference: [...items].map(item => item.externalReference)
+          .sort((left, right) => left < right ? -1 : left > right ? 1 : 0)[0]! })));
     }),
     http.get('/api/batches/:uuid', ({ request, params }) => {
       const denied = authorize(request); if (denied) return denied;

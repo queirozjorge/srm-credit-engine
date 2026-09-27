@@ -36,7 +36,7 @@ for (const scenario of ['success', 'invalid-state', 'invalid-nonce'] as const) t
     expect(exchanged).toBe(scenario === 'invalid-state' ? 0 : 1); expect(bearer).toBe(false);
     expect(new URL(page.url()).search).toBe(''); return;
   }
-  await expect(page.getByRole('img', { name: new RegExp(text.dashboard.chart) })).toBeVisible(); expect(bearer).toBe(true); expect(exchanged).toBe(1);
+  await expect(page.getByRole('group', { name: new RegExp(text.dashboard.chart) })).toBeVisible(); expect(bearer).toBe(true); expect(exchanged).toBe(1);
   await expect(page).toHaveURL(`${baseURL}/dashboard?currency=USD`);
   await page.clock.fastForward(275_000); await expect.poll(() => refreshed).toBe(1);
   await expect(page).toHaveURL(`${baseURL}/dashboard?currency=USD`);
