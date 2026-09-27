@@ -14,7 +14,7 @@ public class SchemaCompatibilityChecker implements InitializingBean {
     private final String expectedVersion;
 
     public SchemaCompatibilityChecker(JdbcTemplate jdbc,
-            @Value("${workflow.schema.expected-version:3}") String expectedVersion) {
+            @Value("${workflow.schema.expected-version:5}") String expectedVersion) {
         this.jdbc = jdbc;
         this.expectedVersion = expectedVersion;
     }

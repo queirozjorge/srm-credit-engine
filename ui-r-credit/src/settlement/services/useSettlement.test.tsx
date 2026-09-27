@@ -37,12 +37,20 @@ test('409 reconcilia operação ativa e impede novo POST', async () => {
   await waitFor(() => expect(result.current.uncertain).toBe(false));
 });
 test('falha definitiva não permite reenviar o lote inteiro', async () => {
-  const keys: (string | null)[] = [];
-  server.use(http.post('/api/batches/:id/settlements', ({ request }) => { keys.push(request.headers.get('Idempotency-Key'));
-    return HttpResponse.json({ ...requestFixture, status: 'FAILED', counts: { ready: 0, pending: 0, settled: 0, failed: 1 }, completedAt: requestFixture.acceptedAt }); }));
+  const keys: (string | null)[] = []; let reads = 0;
+  const persisted = { ...requestFixture, status: 'FAILED' as const,
+    counts: { ready: 0, pending: 0, settled: 0, failed: 1 }, completedAt: requestFixture.acceptedAt };
+  server.use(http.post('/api/batches/:id/settlements', ({ request }) => {
+    keys.push(request.headers.get('Idempotency-Key'));
+    return HttpResponse.json({ code: 'NENHUM_TITULO_APTO', message: 'Nenhum título apto.',
+      context: { batchUuid: batchFixture.uuid, requestUuid: persisted.uuid, statusUrl: persisted.statusUrl } }, { status: 422 });
+  }), http.get('/api/batches/:id', () => {
+    reads++;
+    return HttpResponse.json({ ...batchFixture, status: 'FAILED', counts: persisted.counts, activeRequest: persisted });
+  }));
   const { result } = renderHook(() => useSettlement(batchFixture), { wrapper });
   await act(() => result.current.submit()); expect(keys).toHaveLength(1);
-  await act(() => result.current.submit()); expect(keys).toHaveLength(1);
+  await act(() => result.current.submit()); expect(keys).toHaveLength(1); expect(reads).toBe(1);
 });
 
 test('422 persistido consulta detalhe uma vez e impede novo aceite inicial', async () => {

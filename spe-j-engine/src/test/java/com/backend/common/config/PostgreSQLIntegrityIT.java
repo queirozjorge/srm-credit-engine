@@ -38,7 +38,7 @@ class PostgreSQLIntegrityIT {
     @Test
     void migrationsAreRepeatableWithoutReapplyingOrDeletingData() {
         assertEquals(0, flyway.migrate().migrationsExecuted);
-        assertEquals(4, flyway.info().applied().length);
+        assertEquals(5, flyway.info().applied().length);
     }
 
     @Test

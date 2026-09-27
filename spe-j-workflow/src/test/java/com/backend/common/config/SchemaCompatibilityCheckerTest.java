@@ -6,13 +6,13 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class SchemaCompatibilityCheckerTest {
     @Test void acceptsExpectedVersionAndRequiredColumns() {
-        assertDoesNotThrow(() -> new SchemaCompatibilityChecker(database("3", 6), "3").afterPropertiesSet());
+        assertDoesNotThrow(() -> new SchemaCompatibilityChecker(database("5", 6), "5").afterPropertiesSet());
     }
     @Test void rejectsUnknownSchemaVersion() {
-        assertThrows(IllegalStateException.class, () -> new SchemaCompatibilityChecker(database("2", 6), "3").afterPropertiesSet());
+        assertThrows(IllegalStateException.class, () -> new SchemaCompatibilityChecker(database("4", 6), "5").afterPropertiesSet());
     }
     @Test void rejectsMissingFinancialContractEvenWithExpectedVersion() {
-        assertThrows(IllegalStateException.class, () -> new SchemaCompatibilityChecker(database("3", 5), "3").afterPropertiesSet());
+        assertThrows(IllegalStateException.class, () -> new SchemaCompatibilityChecker(database("5", 5), "5").afterPropertiesSet());
     }
     private JdbcTemplate database(String version, int columns) {
         return new JdbcTemplate() {

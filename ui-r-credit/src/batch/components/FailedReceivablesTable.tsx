@@ -3,6 +3,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { Box, Button, Checkbox, Chip, Stack, TextField, Typography } from '@mui/material';
 import { AppDialog } from '../../common/components/AppDialog';
 import { DataTable } from '../../common/components/DataTable';
+import { RefreshButton } from '../../common/components/RefreshButton';
 import { TableActionButton } from '../../common/components/TableActionButton';
 import { formatCivilDate, formatInstant } from '../../common/format/dates';
 import { formatDecimal, moneyFormat, rateFormat } from '../../common/format/decimal';
@@ -145,6 +146,7 @@ export function FailedReceivablesTable({ batch, rows, totalItems, pagination, on
     <Stack direction={{ xs: 'column', sm: 'row' }} useFlexGap flexWrap="wrap" alignItems={{ sm: 'center' }} justifyContent="space-between" gap={1}>
       <Typography component="h2" variant="h2">{copy.receivables}</Typography>
       <Stack direction="row" useFlexGap flexWrap="wrap" gap={1}>
+        <RefreshButton label={copy.refreshItems} disabled={pagination.disabled} onClick={onRefresh} />
         {authorized && <Button variant="contained" disabled={controller.pending || (!controller.uncertain && (!controller.canSubmit || failureCount === 0))}
           onClick={openDialog}>
           {controller.uncertain ? text.resume : text.action(failureCount)}

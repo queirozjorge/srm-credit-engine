@@ -5,7 +5,7 @@ const text = translations[locale]; const dash = text.dashboard; const statement 
 test('dashboard agrega uma vez por período e troca moeda sem consultas extras', async ({ page }, info) => {
   const requests: string[] = []; page.on('request', request => { if (request.url().includes('/api/')) requests.push(new URL(request.url()).pathname); });
   await page.goto('/dashboard'); await page.getByRole('button', { name: text.demo.manager, exact: true }).click();
-  await expect(page.getByRole('img', { name: new RegExp(dash.chart) })).toBeVisible();
+  await expect(page.getByRole('group', { name: new RegExp(dash.chart) })).toBeVisible();
   await expect(page.locator('body')).not.toHaveCSS('overflow', 'hidden');
   expect(requests).toEqual(['/api/dashboard']);
   await expect(page.getByRole('link', { name: text.batch.create.title, exact: true })).toHaveCount(0);

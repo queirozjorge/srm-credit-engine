@@ -9,7 +9,7 @@ async function gotoDemo(page: Page, path: string) {
   if (/^\/(dashboard|lotes|cedentes|cambio|extrato)/.test(path) || path === '/inexistente') {
     await page.getByRole('button', { name: text.demo.operator, exact: true }).click();
     if (path.startsWith('/dashboard')) {
-      await expect(page.getByRole('img', { name: new RegExp(text.dashboard.chart) })).toBeVisible();
+      await expect(page.getByRole('group', { name: new RegExp(text.dashboard.chart) })).toBeVisible();
       await expect(page.locator('body')).not.toHaveCSS('overflow', 'hidden');
     }
   }

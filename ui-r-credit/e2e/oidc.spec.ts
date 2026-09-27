@@ -20,7 +20,7 @@ for (const profile of ['operador', 'gestor'] as const) test(`${profile}: login r
   await page.locator('input[name="username"]').fill(profile); await page.locator('input[name="password"]').fill(password!);
   await page.locator('input[type="submit"],button[type="submit"]').first().click();
   await expect(page).toHaveURL('https://localhost:8443/dashboard?currency=USD');
-  await expect(page.getByRole('img', { name: new RegExp(text.dashboard.chart) })).toBeVisible();
+  await expect(page.getByRole('group', { name: new RegExp(text.dashboard.chart) })).toBeVisible();
   expect(bearer).toBe(true); expect(grants).toEqual(['authorization_code']);
   await expect(page.getByRole('link', { name: text.batch.create.title, exact: true })).toHaveCount(profile === 'operador' ? 1 : 0);
   expect(await page.evaluate(() => [...Object.values(localStorage), ...Object.values(sessionStorage)].some(value => /eyJ[A-Za-z0-9_-]+\./.test(value)))).toBe(false);

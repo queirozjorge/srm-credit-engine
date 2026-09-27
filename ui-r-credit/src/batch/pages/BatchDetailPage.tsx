@@ -19,7 +19,7 @@ import type { ItemFailure } from '../../settlement/services/contracts';
 import { BatchStatus } from '../components/BatchStatus';
 import { pagination, useBatchDetail } from '../services/useBatches';
 
-type DetailTab = 'summary' | 'receivables' | 'requests' | 'audit';
+type DetailTab = 'receivables' | 'requests' | 'audit';
 
 export function BatchDetailPage() {
   const text = translations[locale].batch;
@@ -29,7 +29,7 @@ export function BatchDetailPage() {
   const [params, setParams] = useSearchParams();
   const filters = pagination(params);
   const selected = params.get('tab');
-  const activeTab: DetailTab = selected === 'receivables' || selected === 'requests' || selected === 'audit' ? selected : 'summary';
+  const activeTab: DetailTab = selected === 'requests' || selected === 'audit' ? selected : 'receivables';
   const { detail, items, valid } = useBatchDetail(batchUuid, filters, activeTab === 'receivables');
   const { showWarning } = useAppFeedback();
   const [selectedFailure, setSelectedFailure] = useState<{ uuid: string; reference: string; failure: ItemFailure } | null>(null);
@@ -43,8 +43,7 @@ export function BatchDetailPage() {
   function changeTab(next: DetailTab, receivableUuid?: string) {
     setParams(current => {
       const updated = new URLSearchParams(current);
-      if (next === 'summary') updated.delete('tab');
-      else updated.set('tab', next);
+      updated.set('tab', next);
       if (receivableUuid) {
         updated.set('auditReceivableUuid', receivableUuid);
         updated.set('auditPage', '1');
@@ -110,36 +109,31 @@ export function BatchDetailPage() {
     </Stack>
 
     {row && <>
+      <Paper variant="outlined" sx={{ p: { xs: 2, md: 2.5 }, minWidth: 0 }}>
+        <Stack spacing={2}>
+          <Stack direction="row" justifyContent="space-between" alignItems="center" gap={2}>
+            <Typography component="h2" variant="h2">{text.summary}</Typography>
+            <BatchStatus status={row.status} />
+          </Stack>
+          <Box component="dl" sx={{ m: 0, display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, minmax(0, 1fr))', lg: 'repeat(4, minmax(0, 1fr))' }, gap: 2 }}>
+            {fields.map(([label, value]) => <Box key={label} sx={{ minWidth: 0 }}>
+              <Typography component="dt" variant="caption" color="text.secondary">{label}</Typography>
+              <Typography component="dd" variant="body2" sx={{ m: 0, overflowWrap: 'anywhere', fontWeight: 600 }}>{value}</Typography>
+            </Box>)}
+          </Box>
+          <Typography variant="body2" aria-live="polite">
+            {text.counts(row.counts.ready, row.counts.pending, row.counts.settled, row.counts.failed)}
+          </Typography>
+          <FinancialTotals values={row.settledTotals} />
+        </Stack>
+      </Paper>
+
       <Tabs value={activeTab} aria-label={text.detailTabs.label} variant="scrollable" scrollButtons="auto"
         onChange={(_, value: DetailTab) => changeTab(value)}>
-        <Tab id={tabId('summary')} aria-controls={panelId('summary')} value="summary" label={text.detailTabs.summary} />
         <Tab id={tabId('receivables')} aria-controls={panelId('receivables')} value="receivables" label={text.detailTabs.receivables} />
         <Tab id={tabId('requests')} aria-controls={panelId('requests')} value="requests" label={text.detailTabs.requests} />
         <Tab id={tabId('audit')} aria-controls={panelId('audit')} value="audit" label={text.detailTabs.audit} />
       </Tabs>
-
-      <Box role="tabpanel" id={panelId('summary')} aria-labelledby={tabId('summary')} hidden={activeTab !== 'summary'}
-        sx={{ display: activeTab === 'summary' ? 'block' : 'none', minWidth: 0, minHeight: 0, flex: 1,
-          overflowY: { xs: 'visible', md: 'auto' } }}>
-        <Paper variant="outlined" sx={{ p: { xs: 2, md: 2.5 }, minWidth: 0 }}>
-          <Stack spacing={2}>
-            <Stack direction="row" justifyContent="space-between" alignItems="center" gap={2}>
-              <Typography component="h2" variant="h2">{text.summary}</Typography>
-              <BatchStatus status={row.status} />
-            </Stack>
-            <Box component="dl" sx={{ m: 0, display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, minmax(0, 1fr))', lg: 'repeat(4, minmax(0, 1fr))' }, gap: 2 }}>
-              {fields.map(([label, value]) => <Box key={label} sx={{ minWidth: 0 }}>
-                <Typography component="dt" variant="caption" color="text.secondary">{label}</Typography>
-                <Typography component="dd" variant="body2" sx={{ m: 0, overflowWrap: 'anywhere', fontWeight: 600 }}>{value}</Typography>
-              </Box>)}
-            </Box>
-            <Typography variant="body2" aria-live="polite">
-              {text.counts(row.counts.ready, row.counts.pending, row.counts.settled, row.counts.failed)}
-            </Typography>
-            <FinancialTotals values={row.settledTotals} />
-          </Stack>
-        </Paper>
-      </Box>
 
       <Box role="tabpanel" id={panelId('receivables')} aria-labelledby={tabId('receivables')} hidden={activeTab !== 'receivables'}
         sx={{ minWidth: 0, minHeight: 0, flex: 1, display: activeTab === 'receivables' ? 'flex' : 'none',
