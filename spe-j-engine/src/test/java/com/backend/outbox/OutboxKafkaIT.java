@@ -48,7 +48,7 @@ class OutboxKafkaIT {
         var now=Instant.now();
         var repository=mock(OutboxRepository.class);
         when(repository.claim(now,now.plusSeconds(60))).thenReturn(Optional.of(claim));
-        new OutboxRelayImpl(repository,new KafkaTemplate<>(factory),Clock.fixed(now,ZoneOffset.UTC),mock(com.backend.outbox.service.impl.OutboxMetrics.class),60,5).publishNext();
+        new OutboxRelayImpl(repository,new KafkaTemplate<>(factory),Clock.fixed(now,ZoneOffset.UTC),mock(com.backend.outbox.service.impl.OutboxMetrics.class),60,5,4,1000).publishNext();
         verify(repository).sent(claim,now);
         try(var consumer=new KafkaConsumer<String,String>(Map.of("bootstrap.servers",KAFKA.getBootstrapServers(),
             "group.id",UUID.randomUUID().toString(),"auto.offset.reset","earliest","enable.auto.commit",false),

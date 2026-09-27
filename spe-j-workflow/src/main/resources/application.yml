@@ -6,6 +6,10 @@ spring:
     username: ${WORKFLOW_DB_USER:srm_workflow}
     password: ${WORKFLOW_DB_PASSWORD:}
     hikari:
+      pool-name: spe-j-workflow
+      maximum-pool-size: ${WORKFLOW_DB_POOL_MAX_SIZE:10}
+      minimum-idle: ${WORKFLOW_DB_POOL_MIN_IDLE:10}
+      connection-timeout: ${WORKFLOW_DB_CONNECTION_TIMEOUT_MS:30000}
       connection-init-sql: SET TIME ZONE 'UTC'
   flyway:
     enabled: false
@@ -14,9 +18,13 @@ spring:
     consumer:
       group-id: ${KAFKA_CONSUMER_GROUP:srm-credit-settlement}
       enable-auto-commit: false
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      max-poll-records: 1
     listener:
       ack-mode: manual_immediate
-      auto-startup: false
+      auto-startup: ${WORKFLOW_CONSUMER_AUTO_STARTUP:true}
 
 server:
   port: ${SERVER_PORT:18081}
@@ -27,7 +35,14 @@ management:
   endpoints:
     web:
       exposure:
-        include: health
+        include: health,metrics
+  metrics:
+    tags:
+      application: ${spring.application.name}
+    distribution:
+      percentiles:
+        "workflow.settlement.duration": 0.5,0.95,0.99
+        "hikaricp.connections.acquire": 0.5,0.95,0.99
   endpoint:
     health:
       show-components: never
@@ -49,6 +64,14 @@ springdoc:
     persist-authorization: false
 
 workflow:
+  consumer:
+    enabled: ${WORKFLOW_CONSUMER_ENABLED:true}
+    concurrency: ${WORKFLOW_CONSUMER_CONCURRENCY:3}
   schema:
-    expected-version: "3"
+    expected-version: "4"
     check-enabled: true
+
+logging:
+  structured:
+    format:
+      console: logstash

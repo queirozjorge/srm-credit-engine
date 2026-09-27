@@ -8,7 +8,7 @@ Objetivo: implementar o [wireframe](index.html) em React/Material UI, preservand
 
 - **Produção:** autenticação Keycloak e APIs reais; indisponibilidade do backend é apresentada como erro recuperável.
 - **Testes:** MSW, handlers e fixtures só existem no harness automatizado e não são incluídos no build distribuído.
-- As evidências anteriores deste arquivo são históricas; homologação de regras financeiras depende dos testes backend/PostgreSQL e de worker futuro.
+- As evidências anteriores deste arquivo são históricas; a homologação financeira nominal atual está em `WORKFLOW_LOAD_REPORT.md`.
 - Reutilizar estrutura e tema existentes. Não copiar o JavaScript monolítico, cálculos financeiros, perfis ou textos de demonstração para os componentes de produção.
 - Tipos/schemas executáveis, bibliotecas, serviços e testes serão introduzidos nas tasks seguintes. A task 01 não instala dependências nem implementa telas/APIs.
 
@@ -76,7 +76,7 @@ Cada task entrega sua implementação e verificação proporcional. Os critério
 | 13 — Keycloak | Login PKCE, retorno na raiz, renovação, logout e Bearer. | Marco 1 | Tokens em memória; sessão real, identidade/papéis e caches isolados. | Login autenticado em operador e gestor verificado; refresh/logout real pendente |
 | 14 — APIs reais | Integração por domínio | APIs do engine e Keycloak | Contratos H.1–H.8, sessão real e ausência de fallback fictício. | Implementada; quatro jornadas reais aprovadas em desktop/celular |
 | 15 — Homologação | Jornadas reais, visual/acessibilidade, CI e documentação. | 14 e conclusão do engine | Backend/DB/Kafka reais e evidências separadas dos testes isolados. | UI/API homologadas no escopo do engine; processamento financeiro aguarda worker |
-| 16 — Liquidação por título | Resultado por título, estados parciais, reprocessamento explícito, auditoria e polling. | SPEC/DATABASE de 27/09/2026. | Sucessos preservados; falhas auditadas; retries e unicidade protegidos no banco; worker conclui futuramente. | UI real conectada; execução financeira aguarda workflow |
+| 16 — Liquidação por título | Resultado por título, estados parciais, reprocessamento explícito, auditoria e polling. | SPEC/DATABASE de 27/09/2026. | Sucessos preservados; falhas auditadas; retries e unicidade protegidos no banco; workflow conclui cada título. | UI real conectada; carga nominal validada em `WORKFLOW_LOAD_REPORT.md` |
 
 Tasks 06 e 07 são independentes após a fundação; a ordem restante preserva os fluxos que precisam ser verificados juntos. Esta indicação de dependências não implica execução automática de outras tasks.
 
@@ -240,7 +240,7 @@ Na verificação inicial, os quatro cenários autenticados contra Keycloak real 
 
 > Atualização em 27/09/2026: o estado histórico abaixo descreve a inspeção anterior ao engine. As APIs H.1–H.8 foram implementadas neste ciclo; consulte [FRONTEND_INTEGRATION.md](FRONTEND_INTEGRATION.md) e [ENGINE_TASKS.md](ENGINE_TASKS.md) para o estado e as verificações atuais.
 
-A consulta ao OpenAPI local confirmou `paths: {}`; inspeção do código confirmou ausência de endpoints de negócio, persistência e consumer financeiro. A implementação dessas APIs é dependência externa definida no backlog. Nenhum mock foi apresentado como API real e nenhum contrato de serviço foi inventado. Matriz por domínio e retomada estão no [registro de integração](FRONTEND_INTEGRATION.md).
+A consulta ao OpenAPI local confirmou os endpoints do engine; inspeção do código confirmou persistência e consumer financeiro separados no workflow. Nenhum mock foi apresentado como API real e nenhum contrato de serviço foi inventado. Matriz por domínio e retomada estão no [registro de integração](FRONTEND_INTEGRATION.md).
 
 Foram corrigidas duas divergências preparatórias com a SPEC: acompanhamento consulta somente GET do lote, assumindo a operação ativa retornada e preservando controle de concorrência; extrato oferece páginas de 20/50/100 itens, com uma consulta explícita e retorno à página 1 ao mudar tamanho. Mocks acompanham a nova consulta do lote; nenhum backend foi alterado. Sem novas dependências ou patterns.
 
@@ -249,7 +249,7 @@ Verificação preparatória da task 14: tipagem, lint, build e 121 testes unitá
 
 ## Registro da task 15
 
-> Atualização em 27/09/2026: Playwright Chrome aprovou 58/58 cenários isolados, 10/10 regressões de produção e 4/4 cenários autenticados no gateway/Keycloak em desktop/celular. Refresh/logout reais e conclusão financeira permanecem pendentes; o consumer do worker está fora do escopo desta entrega.
+> Atualização em 27/09/2026: Playwright Chrome aprovou 58/58 cenários isolados, 10/10 regressões de produção, 4/4 cenários autenticados e a carga nominal de 18 lotes de 1.000 títulos no gateway/Keycloak/engine/workflow. Refresh/logout reais e reprocessamento após falha terminal permanecem pendentes.
 
 Configurada CI GitHub Actions para qualidade e três suítes de navegador, com Node 22, instalação pelo lockfile, Chromium, permissões de leitura e artefatos separados. Sem publicação ou execução remota nesta etapa. Testes demonstrativos passam a iniciar na data das fixtures e avançam normalmente; calendário de produção permanece intacto. Testes unitários fixam somente a data por padrão, mantendo testes explícitos de timers.
 

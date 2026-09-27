@@ -46,3 +46,14 @@ test('rejeita recebível com flag de erro divergente e seleção de simulação 
   expect(simulationInputSchema.safeParse({ batchUuid: requestFixture.batchUuid, receivableUuids: [demoUuid(3)] }).success).toBe(true);
   expect(simulationInputSchema.safeParse({ batchUuid: requestFixture.batchUuid, receivableUuids: [demoUuid(3), demoUuid(3)] }).success).toBe(false);
 });
+
+test('aceita terceira repetição agendada e rejeita agenda sem retry ou em tentativa terminal', () => {
+  const pending = { uuid: demoUuid(32), requestUuid: requestFixture.uuid, receivable: receivableFixture,
+    attemptNumber: 1, previousAttemptUuid: null, status: 'PENDING', hasError: false,
+    retryCount: 3, nextRetryAt: completedAt, terms, completedAt: null, failure: null, result: null };
+  expect(requestItemSchema.safeParse(pending).success).toBe(true);
+  expect(requestItemSchema.safeParse({ ...pending, retryCount: 0 }).success).toBe(false);
+  expect(requestItemSchema.safeParse({ ...pending, retryCount: 4 }).success).toBe(false);
+  expect(requestItemSchema.safeParse({ ...pending, nextRetryAt: null }).success).toBe(true);
+  expect(requestItemSchema.safeParse({ ...pending, status: 'SETTLED', completedAt, result }).success).toBe(false);
+});
