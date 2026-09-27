@@ -20,7 +20,9 @@
     "test:e2e:oidc": "playwright test --config playwright.oidc.config.ts",
     "test:e2e:isolated": "playwright test --config playwright.isolated.config.ts",
     "test:bundle": "node tests/checkBuild.mjs",
-    "test:e2e:integration": "playwright test --config playwright.integration.config.ts"
+    "test:e2e:integration": "playwright test --config playwright.integration.config.ts",
+    "test:e2e:load": "playwright test --config playwright.load.config.ts",
+    "test:e2e:race": "playwright test --config playwright.race.config.ts"
   },
   "dependencies": {
     "@emotion/react": "11.14.0",

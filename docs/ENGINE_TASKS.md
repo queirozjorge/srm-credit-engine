@@ -1,6 +1,6 @@
 # Engine — backlog de implementação paralela
 
-Escopo: engine e integração real; consumer e conclusão financeira ficam fora desta entrega. SPEC.md e DATABASE.md prevalecem. Mocks só em testes; referência cambial mockada no backend é contratual.
+Escopo: engine, workflow e integração real. SPEC.md e DATABASE.md prevalecem. Mocks só em testes; referência cambial mockada no backend é contratual.
 
 Equipe: coordenador e três agentes; responsáveis ajustados à especialidade efetiva. Dependências são gates de integração; implementação independente pode avançar com contratos fixados. Nenhuma tarefa é considerada concluída apenas por código escrito.
 
@@ -22,11 +22,11 @@ Equipe: coordenador e três agentes; responsáveis ajustados à especialidade ef
 | ENG-09A | Motor decimal | 02 | Agente 3 | common/pricing | BigDecimal50 e HALF_EVEN | Golden cases e limites | Concluída |
 | ENG-09B | API simulação | 06B,08B,09A | Coordenador | pricing | H.5 sem persistência | Unitários e HTTP IT | Concluída |
 | ENG-09F | UI simulação | 09B,06F,08F | Agente 2 | ui-r-credit/src/pricing | Debounce e respostas antigas | Unitários, lint e navegador | Concluída |
-| ENG-10B | Aceite e reprocessamento | 09B | Coordenador | settlement comandos | Idempotência global e transação do aceite | Replay, concorrência, 202/422 e PostgreSQL IT | Concluída; processamento final depende do worker |
+| ENG-10B | Aceite e reprocessamento | 09B | Coordenador | settlement comandos | Idempotência global e transação do aceite | Replay, concorrência, 202/422 e PostgreSQL IT | Concluída; processamento final integrado ao workflow |
 | ENG-10F | UI confirmação | 10B,09F | Agente 2 | ui-r-credit/src/settlement | Intenção preservada após rede | Duplo clique, 422, replay e regressão UI | Concluída |
 | ENG-11 | Kafka e relay | 04B | Agente 1 | outbox, infra/kafka | Publicação recuperável e payload exato | Broker, claims e republicação via IT | Concluída |
 | ENG-12B | Consultas históricas | 06B,04B | Coordenador | settlement consultas | H.6 paginado | Histórico, erro e estado atual via HTTP IT | Concluída |
-| ENG-12F | UI acompanhamento | 12B,10F,11,07F | Agente 2 | ui-r-credit/src/settlement e batch | Polling real, sem conclusão fictícia | Polling e regressão responsiva | Concluída; conclusão depende do worker |
+| ENG-12F | UI acompanhamento | 12B,10F,11,07F | Agente 2 | ui-r-credit/src/settlement e batch | Polling real, sem conclusão fictícia | Polling e regressão responsiva | Concluída; terminalização validada na carga do workflow |
 | ENG-13B | Extrato/dashboard | 06B,08B | Coordenador | dashboard, settlement extrato | Somente valores confirmados | Filtros, fusos e agregações | Concluída |
 | ENG-13F | UI relatórios | 13B,08F,14A | Agente 2 | ui-r-credit/src/dashboard e settlement | Vazio real e falha recuperável | Unitários e navegador | Concluída |
 | ENG-14A | Isolar mocks de teste | 01 | Agente 2 | ui-r-credit testes | Mocks exclusivamente testes | Bundle e regressão | Concluída |
@@ -38,6 +38,6 @@ Equipe: coordenador e três agentes; responsáveis ajustados à especialidade ef
 ## Evidências
 
 - Início: checkout sem alterações locais; Java 21 e Node 20 disponíveis; Docker acessível com permissão de execução fora do sandbox.
-- Evidências desta execução: `spe-j-engine ./mvnw verify` (28 unitários e 16 IT aprovados, incluindo HTTP 4/4, PostgreSQL 9/9, Kafka 1/1 e saúde 2/2); `spe-j-workflow ./mvnw verify` (5 testes); Compose reconstruído, todos os seis serviços saudáveis e OpenAPI publicado com 17 paths. Frontend: 157 unitários, typecheck, lint, build, bundle sem demo, 58 cenários isolados Chrome, 10 regressões de produção e 4 E2E autenticadas contra gateway/Keycloak aprovados em desktop e celular. A suíte autenticada cobriu cadastro, prévia CSV, simulação, aceite/idempotência, consultas/auditoria e decisão cambial por outro gestor.
-- Limite de escopo: a API grava o aceite e a outbox por título; `spe-j-workflow` só valida compatibilidade do schema nesta entrega. O consumer e o cálculo/conclusão financeira não estão implementados, portanto não declarar liquidações concluídas nem aceitação financeira ponta a ponta.
+- Evidências desta execução: `spe-j-engine ./mvnw verify` (28 unitários e 16 IT aprovados); `spe-j-workflow ./mvnw verify` (12 testes unitários/infra e 6 IT, sendo 5 PostgreSQL e 1 Kafka); Compose reconstruído, serviços saudáveis e OpenAPI publicado com 17 paths. Frontend: 161 testes Vitest, typecheck, lint, build, 58 cenários isolados Chrome, 10 regressões de produção, 4 E2E autenticadas e 18 lotes de carga com 1.000 títulos. A suíte autenticada cobriu cadastro, prévia, simulação, aceite/idempotência, consultas/auditoria e decisão cambial por outro gestor.
+- Limite de escopo: a carga nominal comprova sucesso, concorrência e reconciliação; falha terminal induzida e reprocessamento seletivo de um título falho permanecem cenários específicos. Os tempos e a amostra estão em [WORKFLOW_LOAD_REPORT.md](WORKFLOW_LOAD_REPORT.md).
 - Propriedade: Agente 1 fundação/schema/infra/outbox; Agente 2 frontend; Agente 3 segurança/auditoria/câmbio/cálculo; coordenador demais domínios e integração.

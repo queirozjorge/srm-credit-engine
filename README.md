@@ -1,6 +1,6 @@
 # SRM Credit Engine
 
-**Revisão contratual de 27/09/2026:** a SPEC agora exige liquidação por título, sucesso parcial, erro individual e reprocessamento auditado. As descrições/evidências da implementação anterior abaixo não comprovam esse fluxo; schemas, mocks, telas, infraestrutura e integração ainda precisam da adequação registrada na task 16 de [FRONTEND_TASKS.md](docs/FRONTEND_TASKS.md).
+**Revisão contratual de 27/09/2026:** a SPEC exige liquidação por título, sucesso parcial, erro individual e reprocessamento auditado. Engine, workflow e UI seguem esse contrato; a carga real homologada está registrada em [WORKFLOW_LOAD_REPORT.md](docs/WORKFLOW_LOAD_REPORT.md).
 
 Plataforma de antecipação de recebíveis com pagamentos em reais ou dólares. Permite cadastrar lotes, simular valores, solicitar liquidações e consultar o histórico das operações.
 
@@ -24,9 +24,9 @@ Plataforma de antecipação de recebíveis com pagamentos em reais ou dólares. 
 
 ## Estado e execução
 
-O Compose inicia a infraestrutura local: Nginx com HTTPS, Keycloak com realm de demonstração, PostgreSQL, Kafka, engine, workflow e frontend. A configuração está descrita em [DECISIONS.md](DECISIONS.md); contratos de negócio e do gateway estão em [SPEC.md](SPEC.md).
+O Compose inicia a infraestrutura local: Nginx com HTTPS, Keycloak com realm de demonstração, PostgreSQL, Kafka, engine, duas instâncias do workflow e frontend. A configuração está descrita em [DECISIONS.md](DECISIONS.md); contratos de negócio e do gateway estão em [SPEC.md](SPEC.md).
 
-O engine fornece APIs de cedentes, lotes/importação, simulação, câmbio, aceite, histórico, extrato e dashboard, com persistência PostgreSQL, autenticação JWT e relay da outbox Kafka. O workflow verifica a versão do schema, mas o consumer de liquidação permanece desativado nesta entrega. O frontend usa Keycloak e não contém um modo de demonstração; as fixtures ficam nos testes. A homologação autenticada de ponta a ponta depende das credenciais locais de operador e gestor.
+O engine fornece APIs de cedentes, lotes/importação, simulação, câmbio, aceite, histórico, extrato e dashboard, com persistência PostgreSQL, autenticação JWT e relay concorrente da outbox Kafka. O workflow valida o schema, consome `credit-receivable`, liquida cada título em transação própria e publica falhas definitivas na DLQ. O frontend usa Keycloak e não contém um modo de demonstração; as fixtures ficam nos testes. A homologação autenticada de ponta a ponta depende das credenciais locais de operador e gestor.
 
 ### Requisitos
 
@@ -57,9 +57,9 @@ cd spe-j-workflow
 | Engine | [localhost:8080/swagger-ui.html](http://localhost:8080/swagger-ui.html) | [localhost:8080/v3/api-docs](http://localhost:8080/v3/api-docs) | `localhost:8081/actuator/health/readiness` |
 | Workflow | [localhost:18081/swagger-ui.html](http://localhost:18081/swagger-ui.html) | [localhost:18081/v3/api-docs](http://localhost:18081/v3/api-docs) | `localhost:18082/actuator/health/readiness` |
 
-O OpenAPI do engine descreve as APIs implementadas. O servidor HTTP do workflow serve somente documentação e health; o processamento de negócio futuro entra pelo consumer Kafka. O Actuator expõe somente health na porta de gerenciamento.
+O OpenAPI do engine descreve as APIs implementadas. O servidor HTTP do workflow serve documentação e health; o processamento financeiro entra pelo consumer Kafka. O Actuator expõe somente health na porta de gerenciamento.
 
-Para iniciar o engine localmente, configure as credenciais PostgreSQL, execute `engine-migrate` pelo Compose e disponibilize Kafka e JWKS do Keycloak. O relay publica outboxes aceitas; a liquidação financeira segue desativada até a entrega do consumer workflow. Para testes integrados, `./mvnw verify` executa PostgreSQL/Kafka com Testcontainers.
+Para iniciar o engine localmente, configure as credenciais PostgreSQL, execute `engine-migrate` pelo Compose e disponibilize Kafka e JWKS do Keycloak. O relay publica outboxes aceitas e o workflow as consome. Para testes integrados, `./mvnw verify` executa PostgreSQL/Kafka com Testcontainers.
 
 Cada `src/main/resources/application.yml` permite substituir a porta com `SERVER_PORT` e desabilitar Swagger/OpenAPI com `SWAGGER_ENABLED=false`. Encerrar cada aplicação com `Ctrl+C`.
 
@@ -82,7 +82,7 @@ spe-j-engine/src/main/java/com/backend/
 spe-j-workflow/src/main/java/com/backend/
 ├── WorkflowApplication.java
 ├── common/       # audit, config, enums, exceptions
-├── settlement/   # consumer como futura entrada de negócio
+├── settlement/   # consumer Kafka e liquidação por título
 ├── pricing/
 └── outbox/
 ```
@@ -99,7 +99,7 @@ Na pasta de cada projeto:
 ./mvnw verify
 ```
 
-O comando produz o JAR executável em `target/`, além dos testes unitários e, no engine, testes integrados com PostgreSQL e Kafka. Os cenários de liquidação efetiva continuam pertencendo ao consumer futuro.
+O comando produz o JAR executável em `target/`, além dos testes unitários e dos testes integrados com PostgreSQL e Kafka. O workflow inclui casos de sucesso, concorrência, rollback isolado, retries e DLQ.
 
 ## Frontend
 
@@ -154,7 +154,7 @@ Verifique saúde e diagnóstico com:
 
 ```sh
 docker compose ps --all
-docker compose logs --tail=100 postgres kafka keycloak spe-j-engine spe-j-workflow nginx
+docker compose logs --tail=100 postgres kafka keycloak spe-j-engine spe-j-workflow spe-j-workflow-2 nginx
 docker compose config --quiet
 ```
 
@@ -166,7 +166,7 @@ Para parar e remover containers/rede, mantendo os dados e o certificado, execute
 
 Com Docker e Python 3 em execução, valide a infraestrutura com `python3 scripts/infra-smoke-test.py`. O teste reinicia a stack, preserva os volumes nomeados e deixa os serviços em execução ao terminar.
 
-O ambiente Compose é para desenvolvimento local, não configuração de produção. Ele sobe gateway, Keycloak, PostgreSQL, Kafka, engine e workflow. O engine valida JWT, aplica migrations e publica solicitações pela outbox; o consumer de liquidação permanece fora desta entrega. As credenciais de teste são configuradas localmente e nunca devem ser registradas em logs.
+O ambiente Compose é para desenvolvimento local, não configuração de produção. Ele sobe gateway, Keycloak, PostgreSQL, Kafka, engine e duas instâncias do workflow no mesmo grupo de consumidores. O engine valida JWT, aplica migrations e publica solicitações pela outbox; as instâncias do workflow distribuem o consumo e liquidam os títulos. As credenciais de teste são configuradas localmente e nunca devem ser registradas em logs.
 
 ### Organização
 
@@ -186,7 +186,7 @@ ui-r-credit/src/
 
 Os domínios de negócio mantêm seus próprios componentes, páginas, serviços e estilos. A aplicação reutiliza tema Material UI, `AppLoader`, traduções centrais, validação Zod e cliente HTTP autenticado, com respeito a movimento reduzido e navegação por teclado.
 
-O frontend oferece dashboard, lotes, cadastro e detalhe, cedentes, câmbio e extrato. Cadastro manual e importação CSV/CNAB enviam o conteúdo original ao engine para validação, prévia e gravação. Simulação, aceite, histórico por título, auditoria, reprocessamento seletivo e acompanhamento usam as APIs reais. Valores monetários permanecem strings decimais. O engine decide elegibilidade e persistência; o frontend não calcula nem simula liquidações. O worker consumidor não está implementado, então solicitações publicadas permanecem pendentes e nenhuma liquidação final é inventada. Login Keycloak usa PKCE S256, renovação e logout, com tokens somente em memória. Mocks ficam isolados nos testes; o build de produção não contém modo demonstrativo.
+O frontend oferece dashboard, lotes, cadastro e detalhe, cedentes, câmbio e extrato. Cadastro manual e importação CSV/CNAB enviam o conteúdo original ao engine para validação, prévia e gravação. Simulação, aceite, histórico por título, auditoria, reprocessamento seletivo e acompanhamento usam as APIs reais. Valores monetários permanecem strings decimais. O engine decide elegibilidade e persistência; o frontend não calcula nem simula liquidações. O workflow conclui cada título de forma independente e o detalhe acompanha estados parciais. Login Keycloak usa PKCE S256, renovação e logout, com tokens somente em memória. Mocks ficam isolados nos testes; o build de produção não contém modo demonstrativo.
 
 TanStack Query reutiliza dados recentes por 30 segundos, sem retry genérico de consultas/mutações, refetch por foco/reconexão ou polling global. A tela de lote consulta o estado pendente e atualiza somente o conteúdo afetado. Os contratos e limites das evidências estão no [guia HTTP e sessão](docs/FRONTEND_HTTP.md).
 
@@ -243,7 +243,7 @@ Tokens ficam em memória. Recarregar retorna à entrada; um novo clique aproveit
 Teste integrado: execute `npm run test:e2e:integration` com `KEYCLOAK_OPERATOR_PASSWORD` e `KEYCLOAK_MANAGER_PASSWORD` disponíveis no ambiente, sem registrar seus valores. A suíte acessa `https://localhost:8443`, não intercepta APIs de negócio e mantém artefatos de credenciais desativados. Sem essas variáveis, os cenários autenticados não podem ser considerados aprovados.
 
 
-O backend expõe OpenAPI e APIs reais. As evidências e limitações da integração atual estão no [registro de integração](docs/FRONTEND_INTEGRATION.md) e no [plano de tarefas](docs/ENGINE_TASKS.md). A conclusão financeira continua pendente do consumer do worker.
+O backend expõe OpenAPI e APIs reais. As evidências da integração estão no [registro de integração](docs/FRONTEND_INTEGRATION.md), no [plano de tarefas](docs/ENGINE_TASKS.md) e no [plano do workflow](docs/WORKFLOW_TASKS.md). A carga completa e o diagnóstico financeiro estão em [WORKFLOW_LOAD_REPORT.md](docs/WORKFLOW_LOAD_REPORT.md).
 
 
 ### Homologação e CI (task 15)

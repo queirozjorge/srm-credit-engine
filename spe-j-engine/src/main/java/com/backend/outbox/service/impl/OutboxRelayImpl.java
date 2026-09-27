@@ -3,6 +3,7 @@ package com.backend.outbox.service.impl;
 import com.backend.outbox.model.OutboxClaim;
 import com.backend.outbox.repository.OutboxRepository;
 import com.backend.outbox.service.IOutboxRelay;
+import jakarta.annotation.PreDestroy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -12,7 +13,9 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import java.time.Clock;
 import java.time.Instant;
-import java.util.concurrent.TimeUnit;
+import java.util.ArrayList;
+import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicInteger;
 
 @Service
 @ConditionalOnProperty(name="engine.outbox.enabled", havingValue="true", matchIfMissing=true)
@@ -24,23 +27,62 @@ public class OutboxRelayImpl implements IOutboxRelay {
     private final OutboxMetrics metrics;
     private final long claimSeconds;
     private final long retrySeconds;
+    private final int concurrency;
+    private final int batchSize;
+    private final ExecutorService publishers;
 
     public OutboxRelayImpl(OutboxRepository repository, KafkaTemplate<String, String> producer, Clock clock, OutboxMetrics metrics,
                            @Value("${engine.outbox.claim-seconds:60}") long claimSeconds,
-                           @Value("${engine.outbox.retry-seconds:5}") long retrySeconds) {
+                           @Value("${engine.outbox.retry-seconds:5}") long retrySeconds,
+                           @Value("${engine.outbox.concurrency:4}") int concurrency,
+                           @Value("${engine.outbox.batch-size:1000}") int batchSize) {
         if (claimSeconds <= 35 || retrySeconds < 1) throw new IllegalArgumentException("Prazos da outbox inválidos.");
+        if (concurrency < 1 || concurrency > 32 || batchSize < concurrency || batchSize > 10000)
+            throw new IllegalArgumentException("Limites de publicação da outbox inválidos.");
         this.repository=repository;
         this.producer=producer;
         this.clock=clock;
         this.metrics=metrics;
         this.claimSeconds=claimSeconds;
         this.retrySeconds=retrySeconds;
+        this.concurrency=concurrency;
+        this.batchSize=batchSize;
+        publishers=Executors.newFixedThreadPool(concurrency, Thread.ofPlatform().name("outbox-publisher-", 0).factory());
     }
 
-    @Scheduled(fixedDelayString="${engine.outbox.delay-ms:1000}")
+    @Scheduled(fixedDelayString="${engine.outbox.delay-ms:100}")
     public void publishAvailable() {
-        for (int count=0; count<100; count++) {
-            if (!publishOne()) return;
+        if (publishers.isShutdown()) return;
+        var remaining = new AtomicInteger(batchSize);
+        var tasks = new ArrayList<Callable<Void>>();
+        for (int lane = 0; lane < concurrency; lane++) {
+            tasks.add(() -> {
+                while (!publishers.isShutdown() && !Thread.currentThread().isInterrupted()
+                        && remaining.getAndDecrement() > 0 && publishOne()) {
+                    // Each lane claims only its next message; there is no unbounded in-flight queue.
+                }
+                return null;
+            });
+        }
+        try {
+            for (var result : publishers.invokeAll(tasks)) result.get();
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+        } catch (ExecutionException failure) {
+            failed(null, failure);
+        } catch (RejectedExecutionException stopped) {
+            if (!publishers.isShutdown()) throw stopped;
+        }
+    }
+
+    @PreDestroy
+    public void stop() {
+        publishers.shutdown();
+        try {
+            if (!publishers.awaitTermination(40, TimeUnit.SECONDS)) publishers.shutdownNow();
+        } catch (InterruptedException interrupted) {
+            publishers.shutdownNow();
+            Thread.currentThread().interrupt();
         }
     }
 

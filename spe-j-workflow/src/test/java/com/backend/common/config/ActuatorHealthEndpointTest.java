@@ -19,12 +19,18 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
         properties = {
                 "management.server.port=0",
                 "workflow.schema.check-enabled=false",
+                "workflow.consumer.enabled=false",
                 "spring.autoconfigure.exclude=org.springframework.boot.jdbc.autoconfigure.DataSourceAutoConfiguration",
                 "springdoc.api-docs.enabled=false",
                 "springdoc.swagger-ui.enabled=false"
         }
 )
 class ActuatorHealthEndpointTest {
+
+    @org.springframework.test.context.bean.override.mockito.MockitoBean
+    org.springframework.jdbc.core.JdbcTemplate jdbc;
+    @org.springframework.test.context.bean.override.mockito.MockitoBean
+    org.springframework.transaction.PlatformTransactionManager transactionManager;
 
     private final HttpClient httpClient = HttpClient.newHttpClient();
 
