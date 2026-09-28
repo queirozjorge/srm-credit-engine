@@ -68,7 +68,7 @@ test('dois operadores e chaves distintas mantêm uma liquidação por título', 
     const winner = responses.findIndex(response => response.status() === 202);
     const accepted = requestSchema.parse(await responses[winner]!.json());
     expect(accepted.requestedBy).toEqual(actors[winner]);
-    await verifySettled(pages[winner]!);
+    await verifySettled(pages[winner]!, batchUuid);
     const authorization = tokens[winner]!();
     const context = contexts[winner]!;
     const detail = batchDetailSchema.parse(await read(context, authorization, `/batches/${batchUuid}`));
