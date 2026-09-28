@@ -93,6 +93,7 @@ test('preserva consulta e scroll ao voltar pelo menu e pelo histórico', async (
   }
   await page.getByRole('navigation').getByRole('link', { name: text.settlement.statement.title, exact: true }).click();
   await expect(page).toHaveURL(/\/extrato$/);
+  if (info.project.name === 'mobile-chromium') await expectMobileNavigationClosed(page);
   await openNavigation(page);
   await page.getByRole('navigation').getByRole('link', { name: text.batch.list.title, exact: true }).click();
   await expect(page).toHaveURL(new RegExp(source.replaceAll('?', '\\?')));

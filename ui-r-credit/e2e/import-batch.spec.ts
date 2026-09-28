@@ -49,9 +49,11 @@ test('422 bloqueia cadastro parcial; erros por linha abrem e fecham sem reabertu
   await expect(page.getByRole('button', { name: copy.confirm, exact: true })).toBeDisabled();
   const trigger = page.getByRole('button', { name: copy.issues(1, false), exact: true });
   for (let i = 0; i < 5; i++) {
+    const dialog = page.locator('[role="dialog"]');
     await trigger.click(); await expect(page.getByRole('dialog')).toContainText(copy.issue(3, 'externalReference', copy.demoField));
     await page.keyboard.press('Escape');
-    await page.getByRole('dialog').dispatchEvent('click');
+    await expect(dialog).toBeAttached();
+    await dialog.dispatchEvent('click');
     await expect(page.getByRole('dialog')).toHaveCount(0); await expect(trigger).toBeFocused();
   }
   await page.setViewportSize({ width: 320, height: 844 });

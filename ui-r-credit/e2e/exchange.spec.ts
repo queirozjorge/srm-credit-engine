@@ -14,7 +14,13 @@ test('operador propõe com incremento e retorna ao lote para simular sem liquida
   for (let i = 0; i < 5; i++) {
     await trigger.click(); const dialog = page.getByRole('dialog', { name: copy.propose });
     await expect(dialog.getByRole('heading', { name: copy.propose })).toBeFocused();
-    await page.keyboard.press('Escape'); await trigger.dispatchEvent('click');
+    await trigger.evaluate(async (button: Element) => {
+      const dialog = button.ownerDocument.querySelector('[role="dialog"]');
+      if (!dialog) throw new Error('O diálogo precisa estar aberto para testar o fechamento.');
+      dialog.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+      await Promise.resolve();
+      button.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+    });
     await expect(dialog).toHaveCount(0); await expect(trigger).toBeFocused();
   }
   await trigger.click();
