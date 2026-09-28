@@ -5,7 +5,7 @@ import { sampleContents } from '../tests/batch/mocks/importSamples';
 const text = translations[locale]; const copy = text.batch.import;
 async function enter(page: Page, format: 'CSV' | 'CNAB' = 'CSV') {
   await page.goto('/lotes/novo'); await page.getByRole('button', { name: text.demo.operator, exact: true }).click();
-  await expect(page.getByRole('table', { name: text.register.choose })).toBeVisible();
+  await expect(page.getByRole('heading', { name: text.batch.create.title, exact: true })).toBeVisible();
   await expect(page.locator('body')).not.toHaveCSS('overflow', 'hidden');
   await page.getByRole('tab', { name: text.batch.sources[format], exact: true }).click();
 }
