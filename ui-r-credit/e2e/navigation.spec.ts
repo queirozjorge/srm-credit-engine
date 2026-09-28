@@ -18,7 +18,14 @@ async function gotoDemo(page: Page, path: string) {
 async function openNavigation(page: Page) {
   const button = page.getByRole('button', { name: text.app.openMenu, exact: true });
   if (await button.isVisible()) await button.click();
-  await expect(page.getByRole('navigation', { name: text.app.navigation })).toBeVisible();
+  const navigation = page.getByRole('navigation', { name: text.app.navigation });
+  await expect(navigation).toBeVisible();
+  await navigation.evaluate(async element => {
+    const aside = element.parentElement;
+    if (!aside) return;
+    await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+    await Promise.all(aside.getAnimations().map(animation => animation.finished.catch(() => undefined)));
+  });
 }
 
 async function expectMobileNavigationClosed(page: Page) {
@@ -77,14 +84,14 @@ test('preserva consulta e scroll ao voltar pelo menu e pelo histórico', async (
     else window.scrollTo(0, 350);
   });
   await setScroll();
+  await expect.poll(readScroll).toBe(350);
   if (info.project.name === 'desktop-chromium') {
     const metrics = await page.locator('#page-content').evaluate(element => ({ scrollTop: element.scrollTop,
       scrollHeight: element.scrollHeight, clientHeight: element.clientHeight,
       overflowY: getComputedStyle(element).overflowY, height: element.getBoundingClientRect().height }));
     expect(metrics.scrollTop, JSON.stringify(metrics)).toBe(350);
   }
-  await page.getByRole('navigation').getByRole('link', { name: text.settlement.statement.title, exact: true })
-    .dispatchEvent('click', { button: 0 });
+  await page.getByRole('navigation').getByRole('link', { name: text.settlement.statement.title, exact: true }).click();
   await expect(page).toHaveURL(/\/extrato$/);
   await openNavigation(page);
   await page.getByRole('navigation').getByRole('link', { name: text.batch.list.title, exact: true }).click();

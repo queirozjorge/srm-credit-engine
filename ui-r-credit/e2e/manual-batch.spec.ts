@@ -10,13 +10,11 @@ async function enter(page: Page) {
 }
 async function fill(page: Page, reference = '000123') {
   const assignor = page.getByRole('combobox', { name: copy.assignor, exact: true });
-  if (!(await assignor.inputValue())) {
-    await assignor.click();
-    await assignor.fill(text.demo.assignor);
-    await expect(page.getByRole('option', { name: text.demo.assignor, exact: true })).toBeVisible();
-    await assignor.press('ArrowDown');
-    await assignor.press('Enter');
-  }
+  await assignor.click();
+  await assignor.fill(text.demo.assignor);
+  await expect(page.getByRole('option', { name: text.demo.assignor, exact: true })).toBeVisible();
+  await assignor.press('ArrowDown');
+  await assignor.press('Enter');
   await page.getByRole('textbox', { name: text.batch.reference, exact: false }).fill(reference);
   await page.getByRole('textbox', { name: text.batch.faceValue, exact: false }).fill('1.234,56');
   await page.getByLabel(text.batch.dueDate, { exact: false }).fill('2099-12-31');
