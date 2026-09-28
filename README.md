@@ -141,7 +141,15 @@ Endereços locais:
 
 O certificado TLS é autoassinado e fica no volume `nginx_certificates`. O navegador avisará que não confia nele; o projeto não altera automaticamente a confiança do sistema. Para desenvolvimento, pode-se confiar no certificado manualmente.
 
-No console administrativo, use o usuário mestre `local-admin` e a senha definida por `KEYCLOAK_ADMIN_PASSWORD`. No realm `srm-credit`, os usuários locais de teste são `operador` (`KEYCLOAK_OPERATOR_PASSWORD`) e `gestor` (`KEYCLOAK_MANAGER_PASSWORD`). `.env.example` contém somente valores de desenvolvimento; não os reutilize fora deste ambiente. O cliente público `ui-r-credit` exige Authorization Code com PKCE S256. A UI inicia login no Keycloak, renova a sessão e envia Bearer; o engine valida assinatura, emissor, audiência, validade e papel.
+Com `.env` baseado em `.env.example`, estas são as credenciais padrão da stack local:
+
+| Acesso | Usuário | Senha padrão |
+| --- | --- | --- |
+| Console administrativo do Keycloak (realm `master`) | `local-admin` | `Local-Admin-2026!` |
+| Aplicação no realm `srm-credit` (papel operador) | `operador` | `Local-Operator-2026!` |
+| Aplicação no realm `srm-credit` (papel gestor) | `gestor` | `Local-Manager-2026!` |
+
+As senhas vêm de `KEYCLOAK_ADMIN_PASSWORD`, `KEYCLOAK_OPERATOR_PASSWORD` e `KEYCLOAK_MANAGER_PASSWORD`, respectivamente. Se essas variáveis forem alteradas no `.env`, use os valores definidos ali. Em um volume Keycloak já inicializado, mudar `.env` não troca a senha dos usuários existentes; atualize-a pelo console administrativo. São credenciais exclusivas para desenvolvimento local; não as reutilize fora deste ambiente. O cliente público `ui-r-credit` exige Authorization Code com PKCE S256. A UI inicia login no Keycloak, renova a sessão e envia Bearer; o engine valida assinatura, emissor, audiência, validade e papel.
 
 Somente o Nginx publica portas no host, vinculadas a `127.0.0.1`. PostgreSQL (`postgres:5432`), Kafka (`kafka:9092`), Keycloak e portas HTTP/management das aplicações permanecem na rede do Compose. O gateway encaminha `/api/` ao engine e `/auth/` ao Keycloak. Detalhes dos prefixos, limites e respostas estão em [SPEC.md](SPEC.md).
 

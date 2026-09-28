@@ -32,7 +32,7 @@ C4Container
     Container(gateway, "Nginx", "Nginx", "Única entrada local publicada; HTTPS, roteamento e rate limiting.")
     Container(engine, "spe-j-engine", "Java, Spring Boot", "API autenticada, validação, precificação indicativa, MockReferenceProvider em processo, PostgreSQL, migrations e relay da outbox.")
     ContainerDb(database, "PostgreSQL", "PostgreSQL", "Estado operacional, snapshots, resultados imutáveis, auditoria e quarentena de offsets poison.")
-    ContainerQueue(broker, "Kafka", "Kafka", "Tópicos credit-receivable e credit-receivable.dlq; chave = UUID do título.")
+    ContainerQueue(broker, "Kafka", "Kafka", "Tópicos credit-receivable e credit-receivable.dlq; DLQ recebe falhas terminais originadas no workflow; chave = UUID do título.")
     Container(workflow, "spe-j-workflow × 2", "Java, Spring Boot", "Consumer group; calcula e liquida cada título em transação PostgreSQL independente.")
   }
   System_Ext(identity, "Keycloak", "OIDC, realm srm-credit.")
@@ -45,12 +45,12 @@ C4Container
   Rel(ui, identity, "Authorization Code + PKCE", "OIDC")
   Rel(engine, identity, "Obtém chaves JWKS e valida claims")
   Rel(engine, database, "Grava aceite, snapshot, auditoria e outbox; lê consultas", "JDBC")
-  Rel(engine, broker, "Publica comandos da outbox após persistência", "Kafka producer")
-  Rel(workflow, broker, "Consome comandos e envia falhas definitivas à DLQ", "Kafka consumer")
-  Rel(workflow, database, "Lê tentativa ativa; grava resultado, falha, auditoria, agregados e quarentena antes do ack", "JDBC; uma transação por título")
+  Rel(engine, broker, "Relay publica comandos da outbox nos tópicos normal e DLQ", "Kafka producer")
+  Rel(workflow, broker, "Consome comandos de liquidação", "Kafka consumer: credit-receivable")
+  Rel(workflow, database, "Lê tentativa ativa; grava resultado, falha, auditoria, agregados e, em falha terminal, entrada da DLQ na outbox antes do ack", "JDBC; uma transação por título")
 ```
 
-O engine é o único responsável por aplicar migrations. O workflow verifica compatibilidade antes de consumir. O payload normal contém somente `batchUuid`, `receivableUuid`, `requestUuid` e `idempotencyKey`; o snapshot financeiro fica persistido no banco. `MockReferenceProvider` está no processo do engine e não representa outro container, endpoint ou serviço implantável.
+O engine é o único responsável por aplicar migrations. O workflow verifica compatibilidade antes de consumir. Em falha financeira terminal, após rollback do processamento, o workflow abre uma transação separada para persistir a tentativa como `FAILED`, a auditoria e a mensagem `credit-receivable.dlq` na outbox. O relay do engine publica essa mensagem no Kafka após o commit. Portanto, o workflow origina a entrada da DLQ, mas não publica diretamente no broker. Mensagens malformadas ou sem correlação vão para `settlement_consumer_quarantine` no PostgreSQL e não para o tópico DLQ. O payload normal contém somente `batchUuid`, `receivableUuid`, `requestUuid` e `idempotencyKey`; o snapshot financeiro fica persistido no banco. `MockReferenceProvider` está no processo do engine e não representa outro container, endpoint ou serviço implantável.
 
 ## Modelo ER — principais relações
 
