@@ -24,23 +24,24 @@
           <mxGeometry height="60" width="120" x="90" y="320" as="geometry" />
         </mxCell>
         <mxCell id="zZYgszB0WS7tlia67gym-10" edge="1" parent="1" source="zZYgszB0WS7tlia67gym-3" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" target="zZYgszB0WS7tlia67gym-4" value="Preserva Authorization: Bearer">
-          <mxGeometry relative="1" as="geometry">
+          <mxGeometry relative="1" x="0.0435" y="30" as="geometry">
+            <mxPoint as="offset" />
             <mxPoint x="510" y="490" as="sourcePoint" />
           </mxGeometry>
         </mxCell>
         <mxCell id="zZYgszB0WS7tlia67gym-3" parent="1" style="rounded=0;whiteSpace=wrap;html=1;" value="nginx&lt;div&gt;TLS / RL / LB&lt;/div&gt;" vertex="1">
           <mxGeometry height="60" width="120" x="320" y="450" as="geometry" />
         </mxCell>
-        <mxCell id="zZYgszB0WS7tlia67gym-4" parent="1" style="rounded=0;whiteSpace=wrap;html=1;" value="spe-j-engine&lt;br&gt;Resource Server&lt;br&gt;JWT local via JWKS&lt;br&gt;iss / aud / exp / nbf&lt;br&gt;API / cadastros / lotes&lt;br&gt;MockReferenceProvider em processo" vertex="1">
-          <mxGeometry height="120" width="140" x="560" y="310" as="geometry" />
+        <mxCell id="zZYgszB0WS7tlia67gym-4" parent="1" style="rounded=0;whiteSpace=wrap;html=1;" value="spe-j-engine&lt;br&gt;Resource Server&lt;br&gt;JWT local via JWKS&lt;br&gt;iss / aud / exp / nbf&lt;br&gt;API / cadastros / lotes&lt;br&gt;MockReferenceProvider&lt;br&gt;relay da outbox (normal / DLQ)" vertex="1">
+          <mxGeometry height="140" width="140" x="560" y="310" as="geometry" />
         </mxCell>
-        <mxCell id="zZYgszB0WS7tlia67gym-5" parent="1" style="rounded=0;whiteSpace=wrap;html=1;" value="spe-j-workflow × 2&lt;br&gt;Compose / mesmo consumer group&lt;br&gt;liquidação por título" vertex="1">
-          <mxGeometry height="80" width="140" x="790" y="320" as="geometry" />
+        <mxCell id="zZYgszB0WS7tlia67gym-5" parent="1" style="rounded=0;whiteSpace=wrap;html=1;" value="spe-j-workflow × 2&lt;br&gt;Compose / mesmo consumer group&lt;br&gt;consome credit-receivable&lt;br&gt;retry transitório&lt;br&gt;falha terminal: outbox DLQ" vertex="1">
+          <mxGeometry height="100" width="160" x="790" y="320" as="geometry" />
         </mxCell>
         <mxCell id="zZYgszB0WS7tlia67gym-8" edge="1" parent="1" source="zZYgszB0WS7tlia67gym-6" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" target="zZYgszB0WS7tlia67gym-5">
           <mxGeometry relative="1" as="geometry">
             <Array as="points">
-              <mxPoint x="850" y="239" />
+              <mxPoint x="860" y="239" />
             </Array>
           </mxGeometry>
         </mxCell>
@@ -54,35 +55,35 @@
             </Array>
           </mxGeometry>
         </mxCell>
-        <mxCell id="zZYgszB0WS7tlia67gym-17" connectable="0" parent="zZYgszB0WS7tlia67gym-7" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" value="outbox: um comando por título" vertex="1">
+        <mxCell id="zZYgszB0WS7tlia67gym-17" connectable="0" parent="zZYgszB0WS7tlia67gym-7" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" value="relay publica outbox: tópico normal ou DLQ" vertex="1">
           <mxGeometry relative="1" x="0.5652" y="-1" as="geometry">
-            <mxPoint x="-9" y="60" as="offset" />
+            <mxPoint x="-9" y="50" as="offset" />
           </mxGeometry>
         </mxCell>
         <mxCell id="zZYgszB0WS7tlia67gym-12" parent="1" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=15;" value="Postgres" vertex="1">
-          <mxGeometry height="80" width="60" x="709" y="430" as="geometry" />
+          <mxGeometry height="80" width="60" x="700" y="500" as="geometry" />
         </mxCell>
         <mxCell id="zZYgszB0WS7tlia67gym-13" edge="1" parent="1" source="zZYgszB0WS7tlia67gym-4" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0;entryY=0.5;entryDx=0;entryDy=0;entryPerimeter=0;" target="zZYgszB0WS7tlia67gym-12">
           <mxGeometry relative="1" as="geometry">
             <Array as="points">
-              <mxPoint x="630" y="470" />
+              <mxPoint x="630" y="540" />
             </Array>
           </mxGeometry>
         </mxCell>
-        <mxCell id="zZYgszB0WS7tlia67gym-18" connectable="0" parent="zZYgszB0WS7tlia67gym-13" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" value="lotes, títulos, tentativas, liquidações, outbox e quarentena de offsets" vertex="1">
+        <mxCell id="zZYgszB0WS7tlia67gym-18" connectable="0" parent="zZYgszB0WS7tlia67gym-13" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" value="API grava cadastros e outbox normal;&lt;br&gt;relay reivindica e marca SENT" vertex="1">
           <mxGeometry relative="1" x="0.4465" y="1" as="geometry">
-            <mxPoint x="-35" y="-29" as="offset" />
+            <mxPoint x="4" y="-69" as="offset" />
           </mxGeometry>
         </mxCell>
-        <mxCell id="zZYgszB0WS7tlia67gym-14" edge="1" parent="1" source="zZYgszB0WS7tlia67gym-5" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=1;entryY=0.5;entryDx=0;entryDy=0;entryPerimeter=0;" target="zZYgszB0WS7tlia67gym-12">
+        <mxCell id="zZYgszB0WS7tlia67gym-14" edge="1" parent="1" source="zZYgszB0WS7tlia67gym-5" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=1;entryY=0.5;entryDx=0;entryDy=0;entryPerimeter=0;" target="zZYgszB0WS7tlia67gym-12" value="resultado + auditoria por título;&lt;br&gt;falha terminal + outbox DLQ na transação;&lt;br&gt;poison em quarentena antes do ACK">
           <mxGeometry relative="1" as="geometry">
             <Array as="points">
-              <mxPoint x="850" y="470" />
+              <mxPoint x="860" y="540" />
             </Array>
           </mxGeometry>
         </mxCell>
-        <mxCell id="zZYgszB0WS7tlia67gym-16" parent="1" style="rounded=0;whiteSpace=wrap;html=1;" value="Kafka: credit-receivable / credit-receivable.dlq" vertex="1">
-          <mxGeometry height="30" width="171" x="653.5" y="170" as="geometry" />
+        <mxCell id="zZYgszB0WS7tlia67gym-16" parent="1" style="rounded=0;whiteSpace=wrap;html=1;" value="Kafka&lt;br&gt;credit-receivable&lt;br&gt;credit-receivable.dlq (falha terminal por título)" vertex="1">
+          <mxGeometry height="55" width="360" x="565" y="140" as="geometry" />
         </mxCell>
         <mxCell id="zZYgszB0WS7tlia67gym-21" edge="1" parent="1" source="zZYgszB0WS7tlia67gym-19" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0.75;exitY=1;exitDx=0;exitDy=0;entryX=0.75;entryY=0;entryDx=0;entryDy=0;" target="zZYgszB0WS7tlia67gym-2">
           <mxGeometry relative="1" as="geometry" />
