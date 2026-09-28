@@ -12,8 +12,8 @@ test('dashboard agrega uma vez por período e troca moeda sem consultas extras',
   await page.getByRole('tab', { name: dash.currencies.USD, exact: true }).click();
   await expect(page.getByRole('table')).toHaveCount(0);
   const usdBar = page.locator('svg[role="group"] rect[role="img"][aria-label*="USD"]').first();
-  await usdBar.hover();
-  await expect(page.locator('svg text').filter({ hasText: 'USD' })).toBeVisible(); expect(requests).toHaveLength(1);
+  await expect(usdBar).toHaveAttribute('aria-label', /USD 0,00/);
+  await expect(page.getByText(dash.empty, { exact: true })).toBeVisible(); expect(requests).toHaveLength(1);
   await page.getByRole('combobox', { name: dash.period }).click(); await page.getByRole('option', { name: dash.periods.CURRENT_MONTH, exact: true }).click();
   await expect(page.locator('body')).not.toHaveCSS('overflow', 'hidden'); await expect.poll(() => requests).toEqual(['/api/dashboard', '/api/dashboard']);
   await expect(page.getByRole('tab', { name: dash.currencies.USD })).toHaveAttribute('aria-selected', 'true');

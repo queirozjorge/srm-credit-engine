@@ -43,7 +43,7 @@ test('gestor consulta; busca vazia e filtro de estado consultam somente uma vez'
   await expect(page.getByRole('table')).toContainText(copy.empty);
   expect(requests).toHaveLength(1); expect(requests[0]).toContain('status=FAILED');
   await page.getByRole('button', { name: copy.clear, exact: true }).click();
-  await expect(page.getByRole('table')).toContainText(id);
+  await expect(page.getByRole('table')).toContainText(text.demo.reference);
   expect(requests).toHaveLength(1); // A consulta inicial ainda está válida no cache.
 });
 test('layout de lotes e detalhe mantém rolagem horizontal dentro da tabela', async ({ page }, info) => {

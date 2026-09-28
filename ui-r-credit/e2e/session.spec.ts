@@ -31,12 +31,13 @@ test('worker demonstra contrato e bloqueia chamadas sem perfil', async ({ page }
 });
 test('falha ao iniciar mocks abre aviso e permite nova tentativa sem modo real', async ({ page }) => {
   await page.addInitScript(() => {
-    const register = navigator.serviceWorker.register.bind(navigator.serviceWorker);
+    const container = navigator.serviceWorker;
+    const register = container.register.bind(container);
     let failed = false;
-    navigator.serviceWorker.register = (...args) => {
+    Object.defineProperty(container, 'register', { configurable: true, value: (...args: Parameters<ServiceWorkerContainer['register']>) => {
       if (!failed) { failed = true; return Promise.reject(new Error('Demo startup test')); }
       return register(...args);
-    };
+    } });
   });
   await page.goto('/entrar');
   await expect(page.getByRole('dialog')).toContainText(text.demo.startupError);

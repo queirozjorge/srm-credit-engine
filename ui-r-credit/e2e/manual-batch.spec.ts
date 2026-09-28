@@ -5,11 +5,18 @@ const text = translations[locale]; const copy = text.batch.manual;
 async function enter(page: Page) {
   await page.goto('/lotes/novo');
   await page.getByRole('button', { name: text.demo.operator, exact: true }).click();
-  await expect(page.getByRole('table', { name: text.register.choose })).toBeVisible();
+  await expect(page.getByRole('heading', { name: text.batch.create.title, exact: true })).toBeVisible();
   await expect(page.locator('body')).not.toHaveCSS('overflow', 'hidden');
 }
 async function fill(page: Page, reference = '000123') {
-  await page.getByRole('button', { name: text.register.select, exact: true }).click();
+  const assignor = page.getByRole('combobox', { name: copy.assignor, exact: true });
+  if (!(await assignor.inputValue())) {
+    await assignor.click();
+    await assignor.fill(text.demo.assignor);
+    await expect(page.getByRole('option', { name: text.demo.assignor, exact: true })).toBeVisible();
+    await assignor.press('ArrowDown');
+    await assignor.press('Enter');
+  }
   await page.getByRole('textbox', { name: text.batch.reference, exact: false }).fill(reference);
   await page.getByRole('textbox', { name: text.batch.faceValue, exact: false }).fill('1.234,56');
   await page.getByLabel(text.batch.dueDate, { exact: false }).fill('2099-12-31');
@@ -44,7 +51,7 @@ test('cadastro revisado envia uma vez, preserva dados e gera lote READY', async 
 test('valida campos, duplicidade local, conflito remoto e preserva rascunho', async ({ page }, info) => {
   await enter(page);
   await page.getByRole('button', { name: copy.addItem, exact: true }).click();
-  await expect(page.getByRole('textbox', { name: copy.assignor, exact: false })).toBeFocused();
+  await expect(page.getByRole('combobox', { name: copy.assignor, exact: true })).toBeFocused();
   await fill(page, 'DEMO-001');
   await page.getByRole('button', { name: copy.addItem, exact: true }).click();
   await fill(page, ' DEMO-001 ');

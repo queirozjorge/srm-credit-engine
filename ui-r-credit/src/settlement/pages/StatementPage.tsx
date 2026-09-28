@@ -4,6 +4,7 @@ import { useSearchParams } from 'react-router';
 import { NavigationLink } from '../../app/routes/NavigationLink';
 import { DateField } from '../../common/components/DateField';
 import { DataTable } from '../../common/components/DataTable';
+import { RefreshButton } from '../../common/components/RefreshButton';
 import { TableActionIcon } from '../../common/components/TableActionButton';
 import { lastSevenDays } from '../../common/format/financialCalendar';
 import { formatInstant } from '../../common/format/dates';
@@ -41,12 +42,18 @@ export function StatementPage() {
           error={showErrors && errors.assignor} helperText={showErrors && errors.assignor ? copy.assignorInvalid : undefined}
           sx={{ flex: '1 1 220px', minWidth: 0, maxWidth: { sm: 280 } }} />
         <Button onClick={apply} variant="contained" disabled={query.isFetching}>{copy.apply}</Button>
+        <Button disabled={query.isFetching} onClick={() => {
+          const next = new URLSearchParams(params);
+          next.set('from', ''); next.set('to', ''); next.set('assignorUuid', ''); next.set('paymentCurrency', ''); next.set('page', '1');
+          setParams(next);
+        }}>{copy.clear}</Button>
       </Stack>
       <Typography variant="caption" color="text.secondary">{copy.dateHint}</Typography>
     </Stack></Paper>
     <Stack spacing={{ xs: 1.5, md: 0.75 }} sx={{ minWidth: 0, minHeight: { md: 0 }, flex: 1, overflow: { xs: 'visible', md: 'hidden' } }}>
       <Stack direction="row" useFlexGap flexWrap="wrap" justifyContent="flex-start" alignItems="center" gap={0.5}>
         <Typography variant="body2" color="text.secondary">{query.data ? copy.resultCount(query.data.totalItems) : copy.table}</Typography>
+        {query.data && <RefreshButton label={copy.refresh} disabled={query.isFetching} onClick={() => { void query.refetch(); }} />}
         {query.data && query.outdated && <Chip label={copy.stale} variant="outlined" />}
       </Stack>
       {query.data && <DataTable label={copy.table} rows={query.data.items} getRowKey={row => row.uuid} emptyMessage={copy.empty} fillHeight columns={[
