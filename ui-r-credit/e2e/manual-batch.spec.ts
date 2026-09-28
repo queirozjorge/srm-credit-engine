@@ -12,9 +12,10 @@ async function fill(page: Page, reference = '000123') {
   const assignor = page.getByRole('combobox', { name: copy.assignor, exact: true });
   await assignor.click();
   await assignor.fill(text.demo.assignor);
-  await expect(page.getByRole('option', { name: text.demo.assignor, exact: true })).toBeVisible();
-  await assignor.press('ArrowDown');
-  await assignor.press('Enter');
+  const option = page.getByRole('option', { name: text.demo.assignor, exact: true });
+  await expect(option).toBeVisible();
+  await option.click();
+  await expect(assignor).toHaveValue(text.demo.assignor);
   await page.getByRole('textbox', { name: text.batch.reference, exact: false }).fill(reference);
   await page.getByRole('textbox', { name: text.batch.faceValue, exact: false }).fill('1.234,56');
   await page.getByLabel(text.batch.dueDate, { exact: false }).fill('2099-12-31');
@@ -52,6 +53,8 @@ test('valida campos, duplicidade local, conflito remoto e preserva rascunho', as
   await expect(page.getByRole('combobox', { name: copy.assignor, exact: true })).toBeFocused();
   await fill(page, 'DEMO-001');
   await page.getByRole('button', { name: copy.addItem, exact: true }).click();
+  await expect(page.getByRole('heading', { name: copy.summary(1, '1.234,56', 1), exact: true })).toBeVisible();
+  await expect(page.getByRole('textbox', { name: text.batch.reference, exact: false })).toHaveValue('');
   await fill(page, ' DEMO-001 ');
   await page.getByRole('button', { name: copy.addItem, exact: true }).click();
   await expect(page.getByText(copy.fields.externalReference, { exact: true })).toBeVisible();

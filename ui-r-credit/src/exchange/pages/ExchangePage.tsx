@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { Box, Button, Chip, MenuItem, Paper, Stack, Tab, Tabs, TextField, Typography } from '@mui/material';
 import { Link, useSearchParams } from 'react-router';
 import { useSession } from '../../auth/services/sessionContext';
@@ -18,6 +18,7 @@ export function ExchangePage() {
   const text = translations[locale].exchange; const [params, setParams] = useSearchParams(); const filters = exchangeFilters(params);
   const { identity } = useSession(); const { view, reference, refresh } = useExchange(filters);
   const [dialog, setDialog] = useState<{ proposal: ExchangeProposal | null; base: string | null } | null>(null); const [open, setOpen] = useState(false);
+  const dialogClosing = useRef(false);
   const data = view.data; const origin = uuid.safeParse(params.get('lote')); const source = origin.success ? origin.data : null;
   const requestedTab = params.get('tab');
   const activeTab = requestedTab === 'proposals' || requestedTab === 'quotes' ? requestedTab : 'actual';
@@ -26,7 +27,12 @@ export function ExchangePage() {
     update({ tab: next, history: next === 'quotes' ? 'quotes' : next === 'proposals' ? 'proposals' : undefined,
       status: undefined, page: '1' });
   }
-  function show(proposal: ExchangeProposal | null) { if (dialog) return; setDialog({ proposal, base: data?.current?.rate ?? null }); setOpen(true); }
+  function show(proposal: ExchangeProposal | null) {
+    if (dialog || dialogClosing.current) return;
+    setDialog({ proposal, base: data?.current?.rate ?? null }); setOpen(true);
+  }
+  function closeDialog() { dialogClosing.current = true; setOpen(false); }
+  function finishDialog() { setDialog(null); setOpen(false); dialogClosing.current = false; }
   const pagination = { page: filters.page, size: filters.size, totalItems: data?.history.page.totalItems ?? 0, disabled: view.isFetching,
     onChange: (next: { page: number; size: number }) => update({ page: String(next.page), size: String(next.size) }) };
   return <Stack spacing={2} sx={{ minWidth: 0, minHeight: { md: 0 }, flex: 1,
@@ -78,6 +84,6 @@ export function ExchangePage() {
       { id: 'until', label: text.until, render: row => formatInstant(row.validUntil) },
       { id: 'id', label: text.identifier, render: row => row.uuid },
     ]} />}
-    {dialog && <ProposalDialog open={open} initial={dialog.proposal} base={dialog.base} onClose={() => setOpen(false)} onExited={() => setDialog(null)} refresh={refresh} />}
+    {dialog && <ProposalDialog open={open} initial={dialog.proposal} base={dialog.base} onClose={closeDialog} onExited={finishDialog} refresh={refresh} />}
   </Stack>;
 }
