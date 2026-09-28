@@ -1,8 +1,8 @@
 # DATABASE — SRM Credit Engine
 
-**Modelo revisado em 27/09/2026: liquidação independente por título, erro e reprocessamento auditados. Migrations e persistência financeira ainda não implementadas.**
+**Estado em 27/09/2026: liquidação independente por título, erro, reprocessamento auditado e quarentena de mensagens poison. O schema vigente está nas migrations V1–V6 do `spe-j-engine`; o workflow verifica compatibilidade e não aplica migrations.**
 
-Este documento detalha o modelo PostgreSQL exigido por [SPEC.md](SPEC.md) e [AGENTS.md](AGENTS.md). As regras abaixo são requisitos de implementação, não evidências de controles já executados. A SPEC permanece como fonte dos contratos funcionais.
+Este documento descreve o modelo PostgreSQL implementado conforme [SPEC.md](SPEC.md) e [AGENTS.md](AGENTS.md). As migrations versionadas em `spe-j-engine/src/main/resources/db/migration` são a fonte executável do schema. A cobertura e os limites dos testes estão resumidos na seção final; a presença de uma regra neste documento não implica que todo cenário listado tenha sido exercitado.
 
 ## Convenções e garantias comuns
 
@@ -15,14 +15,14 @@ Este documento detalha o modelo PostgreSQL exigido por [SPEC.md](SPEC.md) e [AGE
 - Não introduzir um limite de sinal para a taxa base configurável sem contrato funcional correspondente. Validar `1 + base_rate + spread > 0` para cada item. Valor de face e câmbio são estritamente positivos; resultados arredondados de VP e pagamento podem ser zero. O deságio é a diferença entre face e VP, sem impor uma regra adicional de sinal não prevista na SPEC.
 - PKs, FKs, unicidades, defaults e verificações da própria linha devem ser implementados nas migrations. Invariantes entre tabelas, agregados e transições exigem os controles transacionais descritos adiante; não tratá-los como um simples `CHECK` de linha.
 
-## Alterações do modelo nesta revisão
+## Modelo implementado para liquidação por título
 
 - Novas tabelas `receivable_processing` (estado atual do título) e `settlement_request_item` (cada tentativa manual e suas repetições automáticas).
 - `batch` e `settlement_request` recebem contadores e estado `PARTIALLY_SETTLED`; a solicitação recebe modalidade, justificativa, fingerprint e instante de conclusão.
 - Erro e retries saem do cabeçalho da solicitação e passam à tentativa individual. `has_error` é flag calculada pelo estado, evitando divergência entre booleano e status. Sua expressão deve ser a mesma nas duas tabelas, sempre com estado obrigatório.
 - `settlement` passa a representar uma liquidação de um único título, com `UNIQUE(receivable_uuid)` e valores individuais. Remover do modelo a antiga `settlement_item` e a unicidade por lote/solicitação: não há cabeçalho financeiro agregado imutável a atualizar a cada sucesso.
 - `outbox_message` e `audit_event` recebem referências ao título e à tentativa. Outbox existe somente após aceite de um título apto, sem estado `BLOCKED`.
-- A revisão é documental. Não executar DDL nem migrar dados nesta etapa. Não há migrations financeiras existentes a converter; se forem criadas antes da implementação desta revisão, planejar migração versionada e compatibilidade, sem reinterpretar mensagens antigas.
+- O desenho está implementado nas migrations versionadas do engine. A instalação inicial cria este modelo; mudanças futuras devem adicionar uma migration e preservar compatibilidade com mensagens/outbox já persistidas.
 
 ## assignor
 
@@ -265,6 +265,21 @@ Criar uma linha `READY` no aceite de cada título apto. Falha de validação no 
 
 Relay muda `READY` para `CLAIMED`, limpa agendamento e grava token/prazo com versão esperada. Somente dono do token atual pode finalizar. Após confirmação do broker, `SENT`, com `sent_at` e sem agendamento/reivindicação. Falha ou prazo expirado devolve a `READY` com nova agenda. Aplicar checks condicionais explícitos a todos esses campos; `SENT` é terminal. Não descartar por limite de envio. Republicação após falha entre envio e marcação é prevista e protegida pela liquidação única no banco.
 
+## settlement_consumer_quarantine
+
+| Campo | Tipo PostgreSQL | Obrigatoriedade e regra |
+|---|---|---|
+| uuid | UUID | PK; obrigatório. |
+| source_topic | VARCHAR | Obrigatório; `credit-receivable`. |
+| source_partition | INTEGER | Obrigatório; partição não negativa. |
+| source_offset | BIGINT | Obrigatório; offset não negativo. |
+| key_sha256 / value_sha256 | CHAR(64) | SHA-256 hexadecimal dos bytes originais do registro Kafka; nulo quando chave ou valor não existem. Conteúdo bruto nunca é persistido. |
+| key_size_bytes / value_size_bytes | INTEGER | Quantidade de bytes originais, não negativa. |
+| failure_code | VARCHAR(80) | Restrito a `COMANDO_MALFORMADO` e `COMANDO_NAO_CORRELACIONADO`; sem mensagem, payload ou stack trace. |
+| date_register | TIMESTAMPTZ | Obrigatório; instante de persistência. |
+
+`UNIQUE(source_topic, source_partition, source_offset)` torna a quarentena idempotente. Em reentrega, o worker compara hashes, tamanhos e código com a linha existente; divergência mantém o offset sem confirmação. A tabela é append-only: workflow tem `SELECT`/`INSERT`; engine tem somente `SELECT`. O worker confirma a mensagem depois do commit. Essa quarentena não representa falha financeira, não altera título/tentativa e não substitui a DLQ de um título correlacionado.
+
 ## audit_event
 
 | Campo | Tipo PostgreSQL | Obrigatoriedade e regra |
@@ -360,6 +375,7 @@ As credenciais de execução não podem ser proprietárias do schema/tabelas, ex
 | `exchange_rate_proposal` | Engine cadastra e decide; conteúdo original permanece imutável. Worker não precisa escrever. |
 | `batch`, `settlement_request`, `settlement_request_item`, `receivable_processing` | Engine cadastra/aceita e registra falhas no aceite; worker conclui títulos ou registra falha/retry. Atualizar somente campos operacionais autorizados. |
 | `outbox_message` | Engine cria e relay reivindica/publica; worker insere DLQ. Payload e vínculos não podem mudar desde a inserção. |
+| `settlement_consumer_quarantine` | Worker insere/consulta registros poison sem payload ou chave brutos; engine somente consulta. Sem `UPDATE`/`DELETE`. |
 
 Aplicar grants por coluna e/ou triggers de proteção para campos imutáveis dentro de tabelas mutáveis. Validação de transições deve impedir reabertura de solicitações e propostas terminais, lotes liquidados e mensagens enviadas; conferir valores antigos e novos, não somente o domínio do `status`. Lotes `FAILED`/`PARTIALLY_SETTLED` e títulos falhos podem voltar a `PENDING` somente mediante nova solicitação/tentativa; preservar o histórico, sem reabrir tentativa terminal. Flags geradas nunca são alteradas diretamente. Não é necessário adicionar `date_updated` a tabelas imutáveis nem criar `deleted` em registros financeiros ou auditoria. Restrições de privilégios complementam FKs, unicidades, triggers e transações; nenhuma dessas camadas isoladamente substitui as demais.
 
@@ -389,9 +405,13 @@ PKs e restrições `UNIQUE` já fornecem seus índices; não criar cópias equiv
 
 Extrato usa liquidações individuais confirmadas, inclusive de lotes pendentes/parciais, período com início inclusivo/fim exclusivo em UTC e filtros de cedente/moeda aplicados aos itens no banco. Ordenação determinística por instante individual da liquidação e UUID. Paginação segue a SPEC, sem carregar toda a base ou avançar páginas automaticamente. Índices e consultas devem ser medidos; esta documentação não comprova metas de desempenho.
 
-## Migrations e critérios de verificação
+## Migrations, evidências e verificações restantes
 
-O `spe-j-engine` mantém migrations versionadas e é o único responsável por aplicá-las, usando o papel de migração separado das credenciais de execução. O worker verifica versão compatível antes de consumir e não executa migrations. Desabilitar criação/alteração automática do schema pelo ORM. Migrations devem incluir constraints, índices, triggers e grants, com nomes em `snake_case`.
+O `spe-j-engine` aplica as migrations versionadas V1–V6 com credencial de migração separada das credenciais de execução. O workflow verifica versão e colunas compatíveis antes de consumir e não executa migrations. A criação/alteração automática do schema pelo ORM fica desabilitada. Migrations incluem constraints, índices, triggers e grants, com nomes em `snake_case`.
+
+Evidência automatizada existente: `spe-j-engine/src/test/java/com/backend/common/config/PostgreSQLIntegrityIT.java` verifica invariantes e privilégios; `spe-j-workflow/src/test/java/com/backend/settlement/SettlementPostgreSQLIT.java` cobre liquidação por título, replay, rollback isolado, retries, DLQ e concorrência de mensagens duplicadas. `spe-j-engine/src/test/java/com/backend/integration/EngineHttpIT.java` cobre contratos HTTP, autorização e aceite concorrente. Testes dos motores de precificação ficam nos dois projetos. O [relatório de carga](docs/WORKFLOW_LOAD_REPORT.md) registra reconciliação de execuções locais.
+
+Não há evidência ponta a ponta automatizada de falha de processamento seguida de reprocessamento seletivo bem-sucedido preservando os demais títulos; também falta uma corrida de aprovação cambial concorrente diretamente contra PostgreSQL. A carga atual não substitui esses cenários.
 
 Antes de afirmar conformidade da implementação, verificar com PostgreSQL real:
 
@@ -406,4 +426,4 @@ Antes de afirmar conformidade da implementação, verificar com PostgreSQL real:
 - Recuperação de outbox reivindicada, falha após publicação, persistência do orçamento de retries após reinício, falha definitiva com DLQ e mensagem antiga após nova tentativa manual.
 - Cálculo e totais com golden cases, prazo zero, frações de mês, valores que arredondam para zero e overflow; filtros/paginação e planos de consulta com massa representativa.
 
-Os testes acima são critérios futuros; nenhum resultado de execução é afirmado por este documento.
+Os casos abaixo são verificações adicionais recomendadas. Os relatórios vinculados devem ser atualizados quando forem executados; os itens ainda sem evidência não devem ser apresentados como homologados.

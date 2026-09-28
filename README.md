@@ -1,6 +1,6 @@
 # SRM Credit Engine
 
-**Revisão contratual de 27/09/2026:** a SPEC exige liquidação por título, sucesso parcial, erro individual e reprocessamento auditado. Engine, workflow e UI seguem esse contrato; a carga real homologada está registrada em [WORKFLOW_LOAD_REPORT.md](docs/WORKFLOW_LOAD_REPORT.md).
+**Revisão contratual de 27/09/2026:** engine, workflow e UI implementam liquidação por título, sucesso parcial, erro individual e reprocessamento auditado. Execuções locais e limites da evidência de carga estão em [WORKFLOW_LOAD_REPORT.md](docs/WORKFLOW_LOAD_REPORT.md); não representam SLA de produção.
 
 Plataforma de antecipação de recebíveis com pagamentos em reais ou dólares. Permite cadastrar lotes, simular valores, solicitar liquidações e consultar o histórico das operações.
 
@@ -57,9 +57,11 @@ cd spe-j-workflow
 | Engine | [localhost:8080/swagger-ui.html](http://localhost:8080/swagger-ui.html) | [localhost:8080/v3/api-docs](http://localhost:8080/v3/api-docs) | `localhost:8081/actuator/health/readiness` |
 | Workflow | [localhost:18081/swagger-ui.html](http://localhost:18081/swagger-ui.html) | [localhost:18081/v3/api-docs](http://localhost:18081/v3/api-docs) | `localhost:18082/actuator/health/readiness` |
 
-O OpenAPI do engine descreve as APIs implementadas. O servidor HTTP do workflow serve documentação e health; o processamento financeiro entra pelo consumer Kafka. O Actuator expõe somente health na porta de gerenciamento.
+O OpenAPI do engine descreve as APIs implementadas. O servidor HTTP do workflow serve documentação e health; o processamento financeiro entra pelo consumer Kafka. Nas portas internas de gerenciamento, o Actuator expõe `health` e `metrics`; `env` permanece desabilitado e essas portas não são publicadas no host nem no gateway.
 
 Para iniciar o engine localmente, configure as credenciais PostgreSQL, execute `engine-migrate` pelo Compose e disponibilize Kafka e JWKS do Keycloak. O relay publica outboxes aceitas e o workflow as consome. Para testes integrados, `./mvnw verify` executa PostgreSQL/Kafka com Testcontainers.
+
+O workflow atual exige schema versão 6. A migration V6 cria a quarentena durável de comandos Kafka inválidos; aplique-a pelo engine antes de iniciar ou atualizar o workflow. O workflow verifica a versão e nunca aplica migrations.
 
 Cada `src/main/resources/application.yml` permite substituir a porta com `SERVER_PORT` e desabilitar Swagger/OpenAPI com `SWAGGER_ENABLED=false`. Encerrar cada aplicação com `Ctrl+C`.
 
@@ -89,7 +91,7 @@ spe-j-workflow/src/main/java/com/backend/
 
 Os domínios reservam as pastas aplicáveis de DTOs, enums, exceções, modelos, proxies, repositories e services. Resources ficam no engine; o workflow reserva `settlement/consumer`. Contratos de serviço ficam em `service`, implementações em `service/impl`. Arquivos `.gitkeep` preservam as pastas vazias.
 
-`src/test/java/com/backend` acompanha os domínios e `src/test/resources` está reservado em cada projeto. Cada serviço tem testes para readiness do Actuator e bloqueio do endpoint de ambiente; ainda não há testes de regras de negócio. Somente o engine reserva `src/main/resources/db/migration`, sem migrations nesta etapa.
+`src/test/java/com/backend` acompanha os domínios. Os testes cobrem cálculo, APIs, validação e persistência; o workflow usa PostgreSQL/Kafka com Testcontainers para verificar liquidação por título, reentrega, rollback, retries, DLQ e concorrência. As migrations versionadas ficam somente no engine; o workflow verifica a compatibilidade do schema.
 
 ### Verificar e empacotar
 
@@ -188,7 +190,7 @@ Os domínios de negócio mantêm seus próprios componentes, páginas, serviços
 
 O frontend oferece dashboard, lotes, cadastro e detalhe, cedentes, câmbio e extrato. Cadastro manual e importação CSV/CNAB enviam o conteúdo original ao engine para validação, prévia e gravação. Simulação, aceite, histórico por título, auditoria, reprocessamento seletivo e acompanhamento usam as APIs reais. Valores monetários permanecem strings decimais. O engine decide elegibilidade e persistência; o frontend não calcula nem simula liquidações. O workflow conclui cada título de forma independente e o detalhe acompanha estados parciais. Login Keycloak usa PKCE S256, renovação e logout, com tokens somente em memória. Mocks ficam isolados nos testes; o build de produção não contém modo demonstrativo.
 
-TanStack Query reutiliza dados recentes por 30 segundos, sem retry genérico de consultas/mutações, refetch por foco/reconexão ou polling global. A tela de lote consulta o estado pendente e atualiza somente o conteúdo afetado. Os contratos e limites das evidências estão no [guia HTTP e sessão](docs/FRONTEND_HTTP.md).
+TanStack Query reutiliza dados recentes por 30 segundos, sem retry genérico de consultas/mutações, refetch por foco/reconexão ou polling global. A tela de lote consulta o estado pendente e atualiza somente o conteúdo afetado. Os contratos de API e frontend estão na seção H da [SPEC.md](SPEC.md); login, sessão e execução local estão descritos neste README.
 
 O modo local padrão usa o gateway e o Keycloak do Compose. MSW e fixtures são usados somente em testes e não podem substituir silenciosamente uma API indisponível.
 
@@ -220,17 +222,19 @@ A instalação baixa o navegador uma vez; em Linux, dependências de sistema pod
 
 A suíte cobre fluxos e componentes em desktop/celular; a suíte integrada usa gateway, Keycloak e engine reais, requer credenciais de teste e não faz parte da execução sem configuração local. Testes unitários e suítes isoladas usam dados sintéticos, sem comprovar processamento financeiro.
 
-A suíte de componentes usa uma fixture isolada no Vite, porta 5176, sem adicionar telas demonstrativas ao build de produção. Ela verifica modais, avisos, carregamentos simultâneos, campos formatados e paginação. O [guia de componentes](docs/FRONTEND_COMPONENTS.md) descreve seus contratos de uso.
+A suíte de componentes usa uma fixture isolada no Vite, porta 5176, sem adicionar telas demonstrativas ao build de produção. Ela verifica modais, avisos, carregamentos simultâneos, campos formatados e paginação.
 
 ## Documentação
 
-- [HTTP e sessão](docs/FRONTEND_HTTP.md) — cliente, contratos, autenticação real e limites das evidências de teste.
-- [Plano de implementação paralela](docs/ENGINE_TASKS.md) — tarefas, responsáveis, arquivos, critérios, validações e estado.
 - [SPEC.md](SPEC.md) — decisões de negócio, arquitetura, contratos e critérios de aceite.
 - [AGENTS.md](AGENTS.md) — convenções e diretrizes de implementação.
+- [Arquitetura](docs/ARCHITECTURE.md) — C4 níveis 1 e 2 e modelo ER.
+- [Observabilidade](docs/WORKFLOW_OBSERVABILITY.md) — métricas, limites operacionais e diagnóstico.
+- [Relatório de carga](docs/WORKFLOW_LOAD_REPORT.md) — medições locais, configuração e limites da amostra.
+- [DATABASE.md](DATABASE.md) — modelo relacional e invariantes.
 - [DECISIONS.md](DECISIONS.md) — decisões arquiteturais, alternativas, custos e cortes de escopo.
-- [REVIEW.md](REVIEW.md) — estrutura inicial para a revisão do Anexo A; análise pendente.
-- [AI_USAGE.md](AI_USAGE.md) — registro inicial da colaboração com IA e evidências a completar.
+- [REVIEW.md](REVIEW.md) — revisão reversa do Anexo A.
+- [AI_USAGE.md](AI_USAGE.md) — decisões e evidências da colaboração com IA.
 - [Desafio técnico](docs/desafio-tecnico-srm-credit-engine-v2.md) — enunciado e requisitos de avaliação.
 
 
@@ -243,9 +247,9 @@ Tokens ficam em memória. Recarregar retorna à entrada; um novo clique aproveit
 Teste integrado: execute `npm run test:e2e:integration` com `KEYCLOAK_OPERATOR_PASSWORD` e `KEYCLOAK_MANAGER_PASSWORD` disponíveis no ambiente, sem registrar seus valores. A suíte acessa `https://localhost:8443`, não intercepta APIs de negócio e mantém artefatos de credenciais desativados. Sem essas variáveis, os cenários autenticados não podem ser considerados aprovados.
 
 
-O backend expõe OpenAPI e APIs reais. As evidências da integração estão no [registro de integração](docs/FRONTEND_INTEGRATION.md), no [plano de tarefas](docs/ENGINE_TASKS.md) e no [plano do workflow](docs/WORKFLOW_TASKS.md). A carga completa e o diagnóstico financeiro estão em [WORKFLOW_LOAD_REPORT.md](docs/WORKFLOW_LOAD_REPORT.md).
+O backend expõe OpenAPI e APIs reais. O código e os testes de integração estão em `spe-j-engine` e `spe-j-workflow`; as limitações de cada verificação estão registradas em [DECISIONS.md](DECISIONS.md). As medições e o diagnóstico de carga estão em [WORKFLOW_LOAD_REPORT.md](docs/WORKFLOW_LOAD_REPORT.md).
 
 
-### Homologação e CI (task 15)
+### CI e limites da verificação
 
-O [guia de homologação](docs/FRONTEND_ACCEPTANCE.md) reúne comandos, cobertura, limites e critérios pendentes. Os workflows `.github/workflows/frontend.yml` e `backend.yml` executam qualidade frontend, browser tests, testes backend e integração PostgreSQL/Kafka. A suíte de integração frontend autenticada requer `KEYCLOAK_OPERATOR_PASSWORD` e `KEYCLOAK_MANAGER_PASSWORD`; ela não substitui a suíte normal da CI.
+Os workflows `.github/workflows/frontend.yml` e `backend.yml` executam typecheck, lint e build do frontend, testes de navegador, além de testes backend e integração PostgreSQL/Kafka. Os cenários frontend autenticados contra o Keycloak local requerem `KEYCLOAK_OPERATOR_PASSWORD` e `KEYCLOAK_MANAGER_PASSWORD`; não fazem parte da CI padrão. Um relatório local de carga não substitui repetição controlada no ambiente de referência da SPEC.

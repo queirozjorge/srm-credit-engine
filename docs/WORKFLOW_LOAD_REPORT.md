@@ -1,5 +1,145 @@
 # Diagnóstico de carga do spe-j-workflow
 
+## Estado da evidência
+
+### Execução mais recente — `codex5` (27/09/2026)
+
+A execução completa do Playwright terminou aprovada: duas ondas com concorrência
+10, 20 lotes de 1.000 recebíveis (20.000 títulos), sem erros no diagnóstico,
+falhas HTTP ou falhas de liquidação. Todos os 20 lotes chegaram ao estado
+terminal `SETTLED`, com 1.000 títulos cada e zero falhas. O processo levou
+3,6 minutos, incluindo preparação, interface e acompanhamento.
+
+| Métrica | Amostras | P50 | P95 | P99 | Máximo |
+|---|---:|---:|---:|---:|---:|
+| Aceite até estado terminal (`acceptedToTerminal`) | 20 | 36,174 s | 51,227 s | 51,708 s | 51,708 s |
+| Acompanhamento pela UI (`uiElapsed`) | 20 | 38,019 s | 53,997 s | 55,480 s | 55,480 s |
+| Confirmação HTTP de aceite | 20 | 6,434 s | 8,363 s | 8,882 s | 8,882 s |
+
+`acceptedToTerminal` inclui fila Kafka e processamento, portanto não equivale
+ao tempo interno do worker definido na SPEC. `uiElapsed` também inclui o polling
+da tela. A amostra confirma o fluxo nominal sob esta configuração; duas rodadas
+em uma máquina local não caracterizam SLA nem demonstram capacidade sustentada.
+O diagnóstico não contém amostras de latência para simulação; cadastro, login e
+preparação também ficam fora da janela de confirmações concorrentes.
+
+O teste usou `LOAD_SEED=load-matrix10-20260927-codex5`, `LOAD_ROUNDS=2`,
+`LOAD_ITEM_COUNT=1000`, `LOAD_CONCURRENCY=10` e `LOAD_WARMUP=0`. O ambiente era
+macOS arm64, Node 20.20.2 e Compose local com duas instâncias de workflow; o host
+Docker reportou 8 CPUs e 7,75 GiB. É diferente da referência da SPEC (4 vCPU,
+8 GiB disponíveis, aplicação aquecida e um lote por vez) e do perfil de carga
+fixo de 5 solicitações/s por 5 minutos. Não houve aquecimento de carga de um
+minuto: `LOAD_WARMUP=0`. A data é 27/09 em `America/Sao_Paulo`; os instantes
+persistidos após 00:00 aparecem como 28/09 em UTC.
+
+Os percentis usam nearest-rank, com índice `ceil(n × p)`. Assim, nesta amostra de
+20 itens, P99 é igual ao máximo.
+
+Os artefatos preservados por execução estão em
+`ui-r-credit/test-results/load/browser/load-batches-cadastro-impo-39867-la-UI-em-ondas-concorrentes-load-desktop-chromium/diagnostic-matrix-codex5.json`,
+`network-matrix-codex5.json`, `wave-10-1-codex5.json` e `wave-10-2-codex5.json`,
+com resultado em `ui-r-credit/test-results/load/playwright-matrix-codex5.json`.
+Ficam no diretório local ignorado pelo Git; precisam ser incluídos
+separadamente ao arquivar evidência.
+
+Reprodução (carregue `.env` silenciosamente, sem imprimir credenciais):
+
+```sh
+cd ui-r-credit
+set +x
+set -a
+source ../.env >/dev/null 2>&1
+set +a
+LOAD_DATE=2026-09-27 LOAD_CONCURRENCY=10 LOAD_ROUNDS=2 LOAD_ITEM_COUNT=1000 LOAD_WARMUP=0 LOAD_SEED=load-matrix10-20260927-codex5 npm run test:e2e:load
+```
+
+### Limites e tentativas anteriores da `matrix10`
+
+Os artefatos brutos das matrizes históricas `matrix7` a `matrix9` não estão
+disponíveis para reconciliação. Os números dessas seções abaixo são registros
+históricos reportados, sem base para conclusão independente de latência, ganho
+estável ou escalabilidade. Há também uma contradição de unidade/escopo: a matriz
+de uma instância reporta P95 de terminalização de 8,429 s a 73,995 s, mas outro
+parágrafo chama 33,946 ms/69,978 ms de P50/P95 de `acceptedToTerminal`; a matriz
+V4 reporta P95 global de 50,148 s. Sem timestamps brutos por lote, não é possível
+reconciliar esses valores.
+
+Na primeira tentativa desta matriz, `codex1`, a imagem Nginx servida era antiga.
+O teste parou durante a navegação, antes do aceite, e não gerou amostra de carga.
+Na tentativa `codex2`, a liquidação de aquecimento foi concluída pelo backend em
+cerca de 9,2 s, mas a harness permaneceu na lista e procurou o estado terminal
+na página de detalhe; por isso não registrou a amostra. `codex3` validou a
+navegação corrigida com duas liquidações pequenas. `codex4` registrou
+parcialmente 34 lotes medidos (34.000 títulos) nos níveis 1, 2, 5 e na primeira
+onda de 10. Os 34 chegaram a `SETTLED`, mas a execução foi interrompida durante
+screenshots. Seus diagnósticos foram substituídos pela execução posterior;
+restam o resumo de 34 lotes e os percentis capturados durante a execução, não os
+registros individuais para novo cálculo. Para concorrência 10, esse resumo
+reportou P50/P95 de 47,784/61,314 s e UI P95 de 339,915 s; os dois outliers de
+UI impedem tratar esse resultado como medida confiável de experiência.
+
+`codex5` é uma execução completa independente de duas ondas de concorrência 10,
+descrita acima, e não uma continuação transacional da suíte interrompida. Em
+conjunto, as execuções observaram 54 lotes e 54.000 títulos terminalizados, mas
+somente os 20 de `codex5` têm diagnóstico bruto completo disponível agora. Não
+se calcula um percentil combinado para os 54 lotes.
+
+### Reconciliação persistida de `codex4` e `codex5`
+
+Consulta somente leitura ao PostgreSQL encontrou 35 lotes de `codex4` (34
+medidos e um aquecimento) e confirmou os 20 UUIDs de `codex5`. Os 55 lotes
+persistidos somam 55.000 títulos: todos `SETTLED`, sem títulos `FAILED`,
+`PENDING` ou `READY`; há 55.000 liquidações, 55.000 mensagens da outbox normal
+em `SENT` e nenhuma mensagem na DLQ. O consumer group terminou com lag zero nas
+três partições; esse snapshot é global e não separa as execuções. Para a amostra
+medida, excluindo o aquecimento, são 54.000 títulos sem falhas. Essa
+reconciliação confirma o estado persistido observado, mas não recupera os
+timestamps individuais perdidos de `codex4`.
+
+Para reconciliar futuras execuções, preserve por execução `diagnostic.json` com
+timestamps de aceite e terminalização por lote, tempos de UI, definições e
+unidades das métricas, seed e configuração; consultas/exportações do banco para
+contagens e janela `accepted_at`; e snapshots de lag por partição, pool/locks e
+CPU/I/O do PostgreSQL. Declare o método de percentil e ambiente. Para conclusão
+operacional, seguir o perfil e as repetições definidos na SPEC.
+
+## Primeira tentativa `codex1` — falha antes da medição
+
+Em 27/09/2026, o pré-flight encontrou Nginx, Keycloak, PostgreSQL, Kafka,
+`spe-j-engine` e as duas instâncias de `spe-j-workflow` em estado saudável. O
+PostgreSQL respondeu a `pg_isready`. Docker informou 8 CPUs e 8.321.994.752 bytes
+de memória (7,75 GiB); o ambiente não corresponde exatamente à referência de
+4 vCPU/8 GiB da `SPEC.md`. O Chromium empacotado pelo Playwright está disponível.
+
+As credenciais necessárias foram carregadas silenciosamente do ambiente local;
+nenhum valor foi exibido. A suíte iniciou e falhou em aproximadamente um minuto,
+antes da primeira confirmação: depois de um `POST /api/batches` com resposta
+`201` e um `GET /api/batches/{uuid}` com resposta `200`, a página de detalhe não
+exibiu a tabela acessível “Recebíveis” dentro do timeout de 30 segundos
+(`e2e/load/ui.ts:87`). O diagnóstico registra cinco requisições da sessão, sem
+status HTTP de erro. A execução não chegou à simulação nem ao aceite da
+liquidação; por isso registrou zero lotes/títulos medidos e percentis nulos.
+O cadastro de preparação pode ter deixado um lote sintético no banco; a suíte não
+remove dados criados.
+
+Comando executado (as credenciais foram carregadas silenciosamente e seus valores
+não foram exibidos):
+
+```sh
+cd ui-r-credit
+set +x
+set -a
+source ../.env >/dev/null 2>&1
+set +a
+LOAD_SEED=load-matrix10-20260927-codex1 LOAD_DATE=2026-09-27 LOAD_CONCURRENCY=1,2,5,10 LOAD_ROUNDS=3 LOAD_ITEM_COUNT=1000 LOAD_WARMUP=1 npm run test:e2e:load
+```
+
+`LOAD_WARMUP=1` habilitou uma onda de aquecimento. A configuração previa 54 lotes
+medidos (54.000 títulos) e um lote de aquecimento (1.000 títulos), mas nenhum foi
+medido porque a suíte parou durante a navegação do primeiro lote.
+
+### Registro histórico `matrix7` — números não reconciliados
+
 Execução real em 27/09/2026, contra Compose, Nginx, Keycloak, PostgreSQL,
 Kafka, `spe-j-engine` e uma instância de `spe-j-workflow`. A suíte usou a UI autenticada, sem
 interceptar ações de negócio, com seed `load-matrix7-20260927` e data-base
@@ -63,26 +203,24 @@ usados para os percentis da matriz.
 
 ## Diagnóstico
 
-O fluxo nominal está íntegro: a UI cadastra e aceita, o engine publica a
-outbox, o workflow consome com três consumidores, cada título é confirmado em
-transação independente e os agregados terminam consistentes. A degradação
-observada é de fila/concorrência: ao passar de um para dez lotes simultâneos, o
-P95 de terminalização cresce de 8,4 s para 74,0 s, enquanto o Kafka termina com
-lag zero. O gargalo está depois do aceite, na capacidade combinada de transações
-por título e atualizações agregadas no PostgreSQL, e não em mensagens presas no
-tópico.
+O registro histórico atribuía a diferença entre concorrências à fila e levantava
+como hipótese contenção em transações por título e atualização de agregados no
+PostgreSQL. Como os artefatos individuais e a telemetria daquela execução não
+estão disponíveis, essa causa não foi demonstrada. A execução recente `codex5`
+observou a terminalização do fluxo e lag global zero ao final, sem telemetria
+por partição durante as ondas para localizar gargalo.
 
 Para uma referência de produção, repetir com réplicas do workflow, métricas de
 CPU/IO/conexões do PostgreSQL e mais de uma rodada por nível. A carga executada
 valida a integridade e o comportamento nominal; não cobre falha terminal
 induzida nem reprocessamento seletivo de um título falho.
 
-O Compose agora inicia duas instâncias (`spe-j-workflow` e
-`spe-j-workflow-2`) no mesmo grupo Kafka. A carga descrita acima foi executada
-antes dessa configuração e continua sendo a referência de instância única;
-deve ser repetida para medir o ganho e o comportamento de rebalanceamento.
+O Compose atual inicia duas instâncias (`spe-j-workflow` e
+`spe-j-workflow-2`) no mesmo grupo Kafka. `codex5` exercitou essa configuração,
+mas em somente duas ondas de dez lotes; a execução não mede ganho de escala nem
+comportamento de rebalanceamento de forma controlada.
 
-## Reexecução com duas instâncias
+### Registro histórico `matrix8` — números não reconciliados
 
 Em 27/09/2026, a mesma matriz foi repetida com as duas instâncias saudáveis,
 seed `load-matrix8-20260927` e 18.000 novos títulos. O teste terminou com
@@ -103,12 +241,12 @@ rebalanceamento e variação de carga do PostgreSQL. A suíte completa durou 4,3
 minutos, contra 4,0 minutos na execução anterior, pois inclui preparação,
 cadastro e polling da UI.
 
-O diagnóstico completo desta execução está em
-`ui-r-credit/test-results/load/browser/**/diagnostic.json`. Para afirmar ganho
-estável, repetir cada nível por pelo menos três rodadas e acompanhar CPU, I/O,
-pool de conexões, locks e lag por partição.
+O registro histórico apontava para um `diagnostic.json`, mas o arquivo bruto não
+está disponível nesta revisão. Para afirmar ganho estável, repetir cada nível
+por pelo menos três rodadas e acompanhar CPU, I/O, pool de conexões, locks e lag
+por partição.
 
-## Reexecução após a integridade incremental (V4)
+### Registro histórico `matrix9` — números não reconciliados
 
 Depois da migration V4 e da configuração de métricas, a matriz foi repetida em
 27/09/2026 com as mesmas ondas e 18.000 novos títulos, seed

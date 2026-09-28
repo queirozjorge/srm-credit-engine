@@ -31,11 +31,11 @@
         <mxCell id="zZYgszB0WS7tlia67gym-3" parent="1" style="rounded=0;whiteSpace=wrap;html=1;" value="nginx&lt;div&gt;TLS / RL / LB&lt;/div&gt;" vertex="1">
           <mxGeometry height="60" width="120" x="320" y="450" as="geometry" />
         </mxCell>
-        <mxCell id="zZYgszB0WS7tlia67gym-4" parent="1" style="rounded=0;whiteSpace=wrap;html=1;" value="spe-j-engine&lt;br&gt;Resource Server&lt;br&gt;JWT local via JWKS&lt;br&gt;iss / aud / exp / nbf&lt;br&gt;API / cadastros / lotes" vertex="1">
-          <mxGeometry height="100" width="140" x="560" y="310" as="geometry" />
+        <mxCell id="zZYgszB0WS7tlia67gym-4" parent="1" style="rounded=0;whiteSpace=wrap;html=1;" value="spe-j-engine&lt;br&gt;Resource Server&lt;br&gt;JWT local via JWKS&lt;br&gt;iss / aud / exp / nbf&lt;br&gt;API / cadastros / lotes&lt;br&gt;MockReferenceProvider em processo" vertex="1">
+          <mxGeometry height="120" width="140" x="560" y="310" as="geometry" />
         </mxCell>
-        <mxCell id="zZYgszB0WS7tlia67gym-5" parent="1" style="rounded=0;whiteSpace=wrap;html=1;" value="spe-j-worker" vertex="1">
-          <mxGeometry height="60" width="120" x="790" y="330" as="geometry" />
+        <mxCell id="zZYgszB0WS7tlia67gym-5" parent="1" style="rounded=0;whiteSpace=wrap;html=1;" value="spe-j-workflow × 2&lt;br&gt;Compose / mesmo consumer group&lt;br&gt;liquidação por título" vertex="1">
+          <mxGeometry height="80" width="140" x="790" y="320" as="geometry" />
         </mxCell>
         <mxCell id="zZYgszB0WS7tlia67gym-8" edge="1" parent="1" source="zZYgszB0WS7tlia67gym-6" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" target="zZYgszB0WS7tlia67gym-5">
           <mxGeometry relative="1" as="geometry">
@@ -54,7 +54,7 @@
             </Array>
           </mxGeometry>
         </mxCell>
-        <mxCell id="zZYgszB0WS7tlia67gym-17" connectable="0" parent="zZYgszB0WS7tlia67gym-7" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" value="outbox: batch UUID" vertex="1">
+        <mxCell id="zZYgszB0WS7tlia67gym-17" connectable="0" parent="zZYgszB0WS7tlia67gym-7" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" value="outbox: um comando por título" vertex="1">
           <mxGeometry relative="1" x="0.5652" y="-1" as="geometry">
             <mxPoint x="-9" y="60" as="offset" />
           </mxGeometry>
@@ -69,7 +69,7 @@
             </Array>
           </mxGeometry>
         </mxCell>
-        <mxCell id="zZYgszB0WS7tlia67gym-18" connectable="0" parent="zZYgszB0WS7tlia67gym-13" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" value="lote + outbox" vertex="1">
+        <mxCell id="zZYgszB0WS7tlia67gym-18" connectable="0" parent="zZYgszB0WS7tlia67gym-13" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" value="lotes, títulos, tentativas, liquidações, outbox e quarentena de offsets" vertex="1">
           <mxGeometry relative="1" x="0.4465" y="1" as="geometry">
             <mxPoint x="-35" y="-29" as="offset" />
           </mxGeometry>
@@ -81,7 +81,7 @@
             </Array>
           </mxGeometry>
         </mxCell>
-        <mxCell id="zZYgszB0WS7tlia67gym-16" parent="1" style="rounded=0;whiteSpace=wrap;html=1;" value="Kafka: credit-lot" vertex="1">
+        <mxCell id="zZYgszB0WS7tlia67gym-16" parent="1" style="rounded=0;whiteSpace=wrap;html=1;" value="Kafka: credit-receivable / credit-receivable.dlq" vertex="1">
           <mxGeometry height="30" width="171" x="653.5" y="170" as="geometry" />
         </mxCell>
         <mxCell id="zZYgszB0WS7tlia67gym-21" edge="1" parent="1" source="zZYgszB0WS7tlia67gym-19" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0.75;exitY=1;exitDx=0;exitDy=0;entryX=0.75;entryY=0;entryDx=0;entryDy=0;" target="zZYgszB0WS7tlia67gym-2">

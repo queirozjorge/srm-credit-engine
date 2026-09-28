@@ -76,7 +76,7 @@ test('cadastro, importação e liquidação real pela UI em ondas concorrentes',
         const accepted = await confirmSettlement(page, batchUuid);
         expect(accepted.status()).toBe(202);
         const request = requestSchema.parse(await accepted.json());
-        await verifySettled(page);
+        await verifySettled(page, batchUuid);
         await diagnostics.flush();
         const terminal = diagnostics.terminal.get(batchUuid);
         expect(terminal, `Consulta terminal do lote ${batchUuid}`).toBeDefined();
