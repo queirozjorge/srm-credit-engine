@@ -18,8 +18,9 @@ export function AppShell() {
   const open = expanded ?? desktop;
   const menuButton = useRef<HTMLButtonElement>(null);
   const content = useRef<HTMLElement>(null);
+  const navigationChange = useRef(false);
   const memory = useNavigationMemory();
-  const { pathname } = useLocation();
+  const { pathname, search } = useLocation();
   const navigation = [
     { to: '/dashboard', label: text.dashboard.title },
     { to: '/lotes', label: text.batch.list.title },
@@ -35,7 +36,8 @@ export function AppShell() {
     if (element) element.scrollTop = saved?.content ?? 0;
     window.scrollTo({ top: saved?.page ?? 0, behavior: 'instant' });
     return () => {
-      memory.scroll.set(pathname, { page: window.scrollY, content: element?.scrollTop ?? 0 });
+      if (!navigationChange.current) memory.scroll.set(pathname, { page: window.scrollY, content: element?.scrollTop ?? 0 });
+      navigationChange.current = false;
     };
   }, [memory, pathname]);
 
@@ -95,7 +97,17 @@ export function AppShell() {
               {navigation.map((item) => (
                 <Tooltip key={item.to} title={!open && desktop ? item.label : ''} placement="right" enterDelay={400}>
                   <ListItemButton component={NavigationLink} to={item.to} aria-label={item.label}
-                    onClick={() => { if (!desktop) closeMenu(); }}
+                    onClick={event => {
+                      if (!desktop) {
+                        memory.scroll.set(pathname, { page: window.scrollY, content: content.current?.scrollTop ?? 0 });
+                        const destination = memory.destinations.get(item.to) ?? item.to;
+                        const followsNavigation = event.button === 0 && !event.defaultPrevented && !event.metaKey
+                          && !event.ctrlKey && !event.shiftKey && !event.altKey
+                          && (!event.currentTarget.getAttribute('target') || event.currentTarget.getAttribute('target') === '_self');
+                        navigationChange.current = followsNavigation && destination !== `${pathname}${search}`;
+                        closeMenu();
+                      }
+                    }}
                     sx={{ minHeight: 44, px: open ? 1.5 : 1, justifyContent: open ? 'flex-start' : 'center',
                       gap: open ? 1.5 : 0, borderRadius: 1, fontSize: '0.875rem', whiteSpace: 'nowrap', color: 'rgba(255,255,255,0.88)',
                       '&.active, &[aria-current="page"]': { bgcolor: 'rgba(255,255,255,0.16)', color: '#ffffff', fontWeight: 650 },

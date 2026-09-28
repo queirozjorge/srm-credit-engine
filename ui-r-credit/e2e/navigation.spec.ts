@@ -18,7 +18,20 @@ async function gotoDemo(page: Page, path: string) {
 async function openNavigation(page: Page) {
   const button = page.getByRole('button', { name: text.app.openMenu, exact: true });
   if (await button.isVisible()) await button.click();
-  await expect(page.getByRole('navigation', { name: text.app.navigation })).toBeVisible();
+  const navigation = page.getByRole('navigation', { name: text.app.navigation });
+  await expect(navigation).toBeVisible();
+  await navigation.evaluate(async element => {
+    const aside = element.parentElement;
+    if (!aside) return;
+    await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+    await Promise.all(aside.getAnimations().map(animation => animation.finished.catch(() => undefined)));
+  });
+}
+
+async function expectMobileNavigationClosed(page: Page) {
+  const navigation = page.getByRole('navigation', { name: text.app.navigation });
+  await expect(navigation).toHaveAttribute('inert', '');
+  await expect.poll(() => navigation.evaluate(element => element.parentElement?.getBoundingClientRect().height)).toBe(0);
 }
 
 test('menu recolhe e reabre cinco vezes; Escape restaura o foco', async ({ page }, info) => {
@@ -37,7 +50,7 @@ test('menu recolhe e reabre cinco vezes; Escape restaura o foco', async ({ page 
       await expect(navigation.getByRole('link', { name: text.batch.list.title, exact: true })).toBeVisible();
       await expect.poll(async () => (await navigation.boundingBox())?.width).toBe(72);
     } else {
-      await expect(page.getByRole('navigation')).not.toBeVisible();
+      await expectMobileNavigationClosed(page);
     }
     if (info.project.name === 'desktop-chromium') {
       await expect.poll(async () => (await main.boundingBox())?.width ?? 0).toBeGreaterThan(before?.width ?? 0);
@@ -51,30 +64,44 @@ test('menu recolhe e reabre cinco vezes; Escape restaura o foco', async ({ page 
     await expect(page.getByRole('navigation', { name: text.app.navigation })).toBeVisible();
     await expect.poll(async () => (await page.getByRole('navigation').boundingBox())?.width).toBe(72);
   } else {
-    await expect(page.getByRole('navigation')).not.toBeVisible();
+    await expectMobileNavigationClosed(page);
   }
 });
 
-test('preserva consulta e scroll ao voltar pelo menu e pelo histórico', async ({ page }) => {
+test('preserva consulta e scroll ao voltar pelo menu e pelo histórico', async ({ page }, info) => {
   const source = '/lotes?q=Acme&status=PENDING&page=3&size=20';
   await gotoDemo(page, source);
   await expect(page.getByRole('table')).toBeVisible();
   await expect(page.locator('body')).not.toHaveCSS('overflow', 'hidden');
-  await page.addStyleTag({ content: '#page-content { min-height: 1800px; }' });
+  await page.addStyleTag({ content: '#page-content { min-height: 1800px; } #page-content::after { content: ""; display: block; flex: 0 0 1800px; height: 1800px; } @media (min-width: 900px) { #page-content { min-height: 0; max-height: calc(100dvh - 88px); overflow-y: auto !important; } }' });
   await openNavigation(page);
-  await page.evaluate(() => window.scrollTo(0, 350));
-  await page.getByRole('navigation').getByRole('link', { name: text.settlement.statement.title, exact: true })
-    .dispatchEvent('click', { button: 0 });
+  const readScroll = () => page.evaluate(() => {
+    const content = document.querySelector<HTMLElement>('#page-content');
+    return window.innerWidth >= 900 ? content?.scrollTop ?? 0 : window.scrollY;
+  });
+  const setScroll = () => page.evaluate(() => {
+    if (window.innerWidth >= 900) document.querySelector<HTMLElement>('#page-content')?.scrollTo(0, 350);
+    else window.scrollTo(0, 350);
+  });
+  await setScroll();
+  await expect.poll(readScroll).toBe(350);
+  if (info.project.name === 'desktop-chromium') {
+    const metrics = await page.locator('#page-content').evaluate(element => ({ scrollTop: element.scrollTop,
+      scrollHeight: element.scrollHeight, clientHeight: element.clientHeight,
+      overflowY: getComputedStyle(element).overflowY, height: element.getBoundingClientRect().height }));
+    expect(metrics.scrollTop, JSON.stringify(metrics)).toBe(350);
+  }
+  await page.getByRole('navigation').getByRole('link', { name: text.settlement.statement.title, exact: true }).click();
   await expect(page).toHaveURL(/\/extrato$/);
   await openNavigation(page);
   await page.getByRole('navigation').getByRole('link', { name: text.batch.list.title, exact: true }).click();
   await expect(page).toHaveURL(new RegExp(source.replaceAll('?', '\\?')));
-  await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(350);
+  await expect.poll(readScroll).toBe(350);
   await page.goBack();
   await expect(page).toHaveURL(/\/extrato$/);
   await page.goBack();
   await expect(page).toHaveURL(new RegExp(source.replaceAll('?', '\\?')));
-  await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(350);
+  await expect.poll(readScroll).toBe(350);
 });
 
 test('rotas diretas, retorno do detalhe e página inexistente', async ({ page }) => {
@@ -114,7 +141,7 @@ test('layout adapta larguras, texto ampliado e movimento reduzido', async ({ pag
       await expect(page.getByRole('navigation', { name: text.app.navigation })).toBeVisible();
       await expect.poll(async () => (await page.getByRole('navigation').boundingBox())?.width).toBe(72);
     } else {
-      await expect(page.getByRole('navigation')).not.toBeVisible();
+      await expectMobileNavigationClosed(page);
     }
   }
   await page.setViewportSize({ width: 683, height: 384 });

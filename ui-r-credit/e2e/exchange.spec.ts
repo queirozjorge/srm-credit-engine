@@ -8,6 +8,7 @@ test('operador propõe com incremento e retorna ao lote para simular sem liquida
   await page.getByRole('tab', { name: text.batch.detailTabs.requests }).click();
   await page.getByRole('link', { name: text.pricing.goExchange, exact: true }).click();
   await expect(page).toHaveURL(new RegExp(`cambio\\?lote=${id}`));
+  await page.getByRole('tab', { name: copy.proposals, exact: true }).click();
   await expect(page.getByRole('table', { name: copy.proposals })).toBeVisible();
   const trigger = page.getByRole('button', { name: copy.propose, exact: true, includeHidden: true });
   for (let i = 0; i < 5; i++) {
@@ -38,6 +39,7 @@ test('operador propõe com incremento e retorna ao lote para simular sem liquida
 
 for (const decision of ['approve', 'reject'] as const) test(`gestor ${decision}: decisão única, histórico e retorno somente para consulta`, async ({ page }, info) => {
   await page.goto(`/cambio?lote=${id}`); await page.getByRole('button', { name: text.demo.manager, exact: true }).click();
+  await page.getByRole('tab', { name: copy.proposals, exact: true }).click();
   await expect(page.getByRole('table', { name: copy.proposals })).toBeVisible();
   await expect(page.getByRole('button', { name: copy.propose, exact: true })).toHaveCount(0);
   const trigger = page.getByRole('button', { name: copy.review, exact: true, includeHidden: true });
