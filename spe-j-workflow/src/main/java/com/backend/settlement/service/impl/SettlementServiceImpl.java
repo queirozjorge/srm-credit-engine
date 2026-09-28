@@ -58,7 +58,8 @@ public class SettlementServiceImpl implements ISettlementService {
                         var now=clock.instant();
                         if(context.nextRetryAt()!=null && context.nextRetryAt().isAfter(now))
                             return ProcessingOutcome.retry(Duration.between(now,context.nextRetryAt()));
-                        if(context.snapshot()==null) throw new InvalidCommandException("A tentativa não possui condições financeiras fixadas.");
+                        if(context.snapshot()==null) throw new FinancialProcessingException(
+                                "CONDICOES_FIXADAS_AUSENTES", "A tentativa não possui condições financeiras fixadas.");
                         var result=pricing.calculate(context.snapshot());
                         processing.complete(context,true,null,null,now);
                         var settlement=processing.settle(context,result,now);

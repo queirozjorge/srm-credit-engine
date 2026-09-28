@@ -2,7 +2,7 @@
 
 **Decisões aprovadas em 25/09/2026 · Estado atualizado em 27/09/2026 · Escopo Sênior.**
 
-Este documento registra escolhas, alternativas e custos. Os contratos funcionais e operacionais permanecem em [SPEC.md](SPEC.md); as convenções de implementação estão em [AGENTS.md](AGENTS.md). A infraestrutura local com Docker Compose, Nginx e Keycloak está configurada. As funcionalidades de negócio ainda não foram implementadas; as expectativas de carga abaixo precisam ser verificadas por medição.
+Este documento registra escolhas, alternativas, custos e limites de evidência. Os contratos funcionais e operacionais permanecem em [SPEC.md](SPEC.md); as convenções estão em [AGENTS.md](AGENTS.md). A implementação atual inclui API, workflow, frontend, migrations e infraestrutura local. O Compose é ambiente de desenvolvimento, não configuração de produção.
 
 ## 1. Separar o processamento de liquidações da API
 
@@ -39,7 +39,7 @@ Uma única aplicação modular poderia atender à API e às liquidações com me
 - Escala do consumo limitada pelo número de partições, pelos recursos do banco e pelo tamanho dos lotes. O paralelismo passa a incluir títulos do mesmo lote; a atomicidade permanece obrigatória por título, com contenção possível na atualização dos agregados.
 - Motores próprios no engine e no worker exigem golden cases, casos de borda e compatibilidade de versões para prevenir divergências. Não haverá biblioteca de aplicação compartilhada.
 
-O desafio penaliza complexidade sem justificativa. Esta escolha assume conscientemente custo adicional e não representa evidência de ganho de desempenho já medido. Antes de afirmar benefício, verificar latência HTTP sob carga de liquidação, tempo de processamento, espera em fila e saturação do banco ao variar a quantidade de workers, respeitando os critérios da SPEC.
+O desafio penaliza complexidade sem justificativa. Esta escolha assume conscientemente custo adicional. O [relatório de carga](docs/WORKFLOW_LOAD_REPORT.md) registra 20 lotes/20.000 títulos liquidados em duas ondas de concorrência 10, com P95 aceite-terminal de 51,227 s e UI de 53,997 s. O teste local não corresponde ao perfil de 5 solicitações/s por 5 minutos nem ao ambiente de referência da SPEC; as matrizes históricas 7–9 não têm artefatos brutos. Não inferir SLA, ganho estável ou escalabilidade.
 
 ## 2. Escopo mantido e simplificações
 
@@ -57,15 +57,19 @@ Removida a obrigação de disponibilizar `builder(...)` em toda classe instancia
 
 Removida a proibição de injeção por construtor. Injeção por construtor e por campos são permitidas; a injeção em campos mantém as anotações explícitas definidas no AGENTS.md. Essas flexibilizações evitam impor mecanismos sem benefício concreto.
 
-## 4. Evidências e validações pendentes
+## 4. Evidências e limites conhecidos
 
-O teste de infraestrutura `infra/scripts/infra-smoke-test.py` validou a inicialização reproduzível, o gateway HTTPS, a autenticação OIDC do realm de demonstração, os limites e erros HTTP, a persistência dos volumes e a ausência de credenciais nos logs. Os testes de backend cobrem readiness do Actuator e bloqueio do endpoint de ambiente; não comprovam regras financeiras.
+- Os dois motores têm testes automatizados dos golden cases, cálculo decimal fracionário e limites. O workflow tem testes PostgreSQL para resultado por título, reentrega, rollback isolado, retries, DLQ e concorrência de mensagens duplicadas.
+- Engine e frontend têm testes unitários; o engine tem testes HTTP/PostgreSQL, e o frontend tem suites Playwright. O relatório registra uma execução de carga autenticada aprovada para 20 lotes/20.000 títulos em concorrência 10, além de uma execução interrompida com resultados reconciliados no banco e os limites dessa evidência; procedimentos e sinais estão em [docs/WORKFLOW_OBSERVABILITY.md](docs/WORKFLOW_OBSERVABILITY.md).
+- Os workflows de CI estão em `.github/workflows/backend.yml` e `.github/workflows/frontend.yml`. Configuração local e limites de implantação estão no README.
+- A integração real ainda não demonstra por cenário ponta a ponta uma falha de processamento de um título seguida de reprocessamento seletivo, nem a corrida cambial concorrente contra PostgreSQL. Esses casos não devem ser apresentados como homologados.
+- As rodadas de carga têm amostra limitada e o relatório atual deve ser lido conforme sua definição de tempo, ambiente e limitações. Não inferir SLA de produção.
 
-Continuam pendentes testes de golden cases financeiros, concorrência e recuperação da liquidação, rollback isolado por título, reprocessamento seletivo auditado, aprovação cambial, medições de carga do worker e diagramas ER/C4. As evidências devem ser associadas às decisões quando essas funcionalidades forem implementadas. A validação do Compose é local e não demonstra disponibilidade ou segurança de produção.
+Os diagramas de contexto, containers e modelo ER estão em [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). A infraestrutura local não demonstra alta disponibilidade ou segurança de produção.
 
 ## 5. Estado funcional atual
 
-O Compose inicia Nginx, Keycloak, PostgreSQL, Kafka, engine, workflow e frontend. Engine e workflow expõem Swagger sem operações de negócio e health checks do Actuator. O HTTP do workflow serve apenas à documentação; seu consumer Kafka permanece desativado. O engine ainda não valida tokens nem usa o banco, o frontend ainda não implementa login OIDC e não há cadastro, simulação ou liquidação implementados.
+O Compose inicia Nginx, Keycloak, PostgreSQL, Kafka, engine, duas instâncias do workflow e frontend. O engine expõe APIs OpenAPI, valida JWT/papéis, mantém migrations e outbox, e implementa cadastro, simulação, câmbio, consultas e aceite. O workflow consome `credit-receivable` e liquida cada título em transação própria. O frontend autentica via OIDC/PKCE e usa as APIs reais; os mocks ficam no harness de testes. Os resultados e limitações da carga local estão no relatório vinculado acima.
 
 ## 6. Infraestrutura do ambiente local
 
@@ -79,15 +83,15 @@ O Compose inicia Nginx, Keycloak, PostgreSQL, Kafka, engine, workflow e frontend
 
 Os contratos detalhados de rotas, limites, respostas, cache e logs do gateway estão em [SPEC.md](SPEC.md). Comandos, endereços, credenciais de demonstração e diagnóstico estão em [README.md](README.md).
 
-## 7. Frontend por marcos e contratos — 26/09/2026
+## 7. Histórico da implementação do frontend — 26/09/2026
 
-Implementar primeiro as telas com mocks HTTP explícitos por domínio, preservando composição e identidade do wireframe com Material UI; depois integrar Keycloak e APIs reais. Isso permite validar interface e estados enquanto o backend ainda não possui operações de negócio. A alternativa de aguardar cada API adiaria a validação dos fluxos; o custo aceito é manter fixtures e contratos sincronizados com o futuro OpenAPI. Mocks não são fallback de produção nem evidência de integridade financeira.
+O trabalho começou pelas telas e pelo contrato de domínio com mocks HTTP de teste, seguido da integração com Keycloak e APIs reais. Essa ordem permitiu validar a interface enquanto os serviços eram implementados; os mocks não são fallback de produção nem evidência de integridade financeira.
 
-O responsável aprovou cadastro/edição de cedentes também pelo gestor. A matriz de autorização e os contratos ficam exclusivamente no anexo H da SPEC; dependências, estados das tasks e adaptações do protótipo ficam no [backlog do frontend](docs/FRONTEND_TASKS.md). Nesta etapa foram definidos contratos documentais, sem introduzir patterns, camadas executáveis, dependências ou endpoints.
+O responsável aprovou cadastro/edição de cedentes também pelo gestor. A matriz de autorização e os contratos estão no anexo H da SPEC. Esta seção registra a decisão histórica; o README descreve as funcionalidades atuais.
 
 ## 8. Liquidação independente e reprocessamento por título — 27/09/2026
 
-O responsável alterou a regra: falha de um título não desfaz as liquidações dos demais. O lote organiza cadastro, confirmação e acompanhamento; o título passa a ser a unidade de processamento financeiro e da mensagem Kafka. O contrato completo está nas seções 4/D/H.6 da SPEC e o modelo físico proposto em DATABASE.md.
+O responsável alterou a regra: falha de um título não desfaz as liquidações dos demais. O lote organiza cadastro, confirmação e acompanhamento; o título passa a ser a unidade de processamento financeiro e da mensagem Kafka. O contrato completo está nas seções 4/D/H.6 da SPEC e o modelo físico implementado está descrito em DATABASE.md e nas migrations do engine.
 
 A alternativa de manter uma transação única por lote foi descartada porque impediria preservar sucessos parciais. Adotamos comandos por título, flag de erro derivada do estado, histórico de tentativas e reprocessamento explícito apenas de falhos. O custo é acompanhar progresso, erros e snapshots distintos por tentativa, atualizar projeções concorrentes e adaptar telas/mocks. Não é necessário introduzir Saga ou compensar títulos já liquidados, pois o negócio agora exige preservar esses resultados.
 
@@ -95,4 +99,4 @@ O modelo separa dados imutáveis do título, estado operacional atual, tentativa
 
 Para esta entrega, permanece no máximo uma solicitação pendente por lote; os títulos nela são processados independentemente. O operador pode selecionar falhos para nova tentativa quando a solicitação terminar, com justificativa e novas condições. Essa escolha simplifica o controle de seleção sem reintroduzir atomicidade financeira do lote. Campos financeiros do título continuam imutáveis e cadastro/importação continuam integrais.
 
-Esta revisão altera documentação, não código, migrations, tópicos, mocks ou telas. A infraestrutura ainda referencia `credit-lot`/`credit-lot.dlq` em `infra/kafka/create-topics.sh` e `infra/scripts/infra-smoke-test.py`; esses arquivos não foram alterados nesta revisão documental. A implementação deverá provisionar os novos tópicos, ajustar produtor/consumer, persistência e UI antes da homologação. As evidências de frontend anteriores não comprovam o novo fluxo.
+O contrato foi implementado em engine, workflow, migrations, frontend e tópicos `credit-receivable`/`credit-receivable.dlq`. O workflow processa cada título independentemente, registra falhas por tentativa e permite reprocessamento manual auditado somente de falhos. O smoke test de infraestrutura deve verificar os mesmos nomes de tópicos provisionados pelo Compose. Evidências anteriores à revisão de 27/09 permanecem históricas; consulte o relatório de carga e a cobertura atual antes de afirmar homologação de um cenário específico.

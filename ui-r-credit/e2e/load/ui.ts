@@ -101,7 +101,10 @@ export async function confirmSettlement(page: Page, batchUuid: string): Promise<
   return response;
 }
 
-export async function verifySettled(page: Page) {
+export async function verifySettled(page: Page, batchUuid: string) {
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await page.locator(`#page-content a[href="/lotes/${batchUuid}"]`).click();
+  await expect(page).toHaveURL(new RegExp(`/lotes/${batchUuid}$`));
   const summary = page.getByRole('heading', { name: text.batch.summary, exact: true }).locator('..');
   await expect(summary.getByText(text.batch.statuses.SETTLED, { exact: true })).toBeVisible({ timeout: 180_000 });
   await expect(page.getByRole('dialog')).toHaveCount(0);

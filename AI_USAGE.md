@@ -1,6 +1,6 @@
 # AI_USAGE — Colaboração com IA
 
-**25/09/2026 · Documentação e estruturas iniciais do frontend e dos backends; funcionalidades pendentes.**
+**Registro iniciado em 25/09/2026.** As seções datadas abaixo preservam a cronologia do trabalho e descrevem o estado observado em cada etapa; não representam, por si só, o estado atual do repositório.
 
 Este documento registra decisões e evidências de colaboração. Deve ser atualizado com fatos verificáveis durante a implementação, sem incluir o histórico integral das sessões ou apresentar resultados planejados como executados.
 
@@ -25,15 +25,19 @@ As instruções de implementação estão em [AGENTS.md](AGENTS.md), os contrato
 
 ## 3. Decisões mantidas sob responsabilidade humana
 
-O responsável pelo projeto decidiu manter a separação entre engine e worker e o formato atual da SPEC após a análise da IA. Também aprovou a flexibilização das regras de instanciação e injeção. Essas escolhas determinam escopo, custo e convenções da entrega; a IA forneceu análise e redação, enquanto a decisão final permaneceu com o responsável.
+O responsável pelo projeto decidiu manter a separação entre engine e worker e o formato da SPEC após a análise da IA. Também aprovou a flexibilização das regras de instanciação e injeção.
+
+As políticas financeiras e de segurança permaneceram sob decisão humana: fórmula, prazos, precisão e arredondamento; validade e aprovação cambial; liquidação independente por título, sucesso parcial e limites do reprocessamento; papéis, identidade autenticada, proibição de autoaprovação e dados permitidos em logs. Essas decisões definem exposição financeira, integridade dos registros e autoridade de cada usuário. A IA ajudou a comparar alternativas, apontar consequências e traduzir decisões em contratos e implementação; não foi tratada como fonte de política ou aprovadora. O responsável avaliou e aprovou a decisão final, mantendo a responsabilidade pelo domínio e pelos controles de segurança.
 
 ## 4. Erro concreto da IA e como foi detectado
 
-**Pendente.** Este registro ainda não contém um erro concreto da IA documentado com evidência suficiente. A seção deve ser preenchida com um caso real ocorrido no trabalho, conforme exige o desafio.
+Na revisão de infraestrutura, Codex afirmou inicialmente que `infra/kafka/create-topics.sh` ainda criava `credit-lot`. A leitura direta do script refutou a afirmação: ele já cria `credit-receivable` e `credit-receivable.dlq`. A referência desatualizada estava em `infra/scripts/infra-smoke-test.py`, que ainda esperava `credit-lot` e `credit-lot.dlq`.
 
-Registrar a proposta incorreta, o impacto possível, a evidência que a refutou, a correção aplicada e a verificação posterior. Não atribuir à IA uma afirmação do usuário nem apresentar uma divergência de preferência arquitetural como erro técnico.
+O erro poderia levar a uma edição desnecessária do script correto e ocultar a divergência real: a verificação de infraestrutura rejeitaria o tópico atual ou validaria um nome legado, dando diagnóstico incorreto sobre o broker e o contrato do worker. A evidência detectora foi comparar diretamente os dois arquivos e localizar os nomes configurados em cada um. A expectativa do smoke test foi corrigida em `infra/scripts/infra-smoke-test.py` para `credit-receivable` e `credit-receivable.dlq`, mantendo o script de criação alinhado ao contrato vigente. A alteração está aplicada; sua verificação permanece pendente e não é alegada nesta seção.
 
-## 5. Verificações da implementação
+## 5. Verificações da implementação — registros históricos
+
+Os resultados a seguir pertencem às etapas e datas registradas. Não são uma execução atual nem uma declaração de que todos os critérios do desafio estejam comprovados hoje.
 
 Verificações executadas nesta etapa:
 
@@ -54,7 +58,7 @@ Verificações do frontend:
 
 ## 6. Task 01 do frontend — 26/09/2026
 
-O responsável aprovou desenvolvimento com mocks antes da integração real, preservação da identidade do wireframe em Material UI e cadastro/edição de cedentes também pelo gestor. Codex alinhou a matriz de permissões, documentou contratos propostos no anexo H da SPEC e registrou as 12 telas, dependências das 15 tasks e cenários no [backlog do frontend](docs/FRONTEND_TASKS.md).
+O responsável aprovou desenvolvimento com mocks antes da integração real, preservação da identidade do wireframe em Material UI e cadastro/edição de cedentes também pelo gestor. Codex alinhou a matriz de permissões, documentou contratos no anexo H da SPEC e registrou as 12 telas, dependências das 15 tasks e cenários em um backlog histórico de frontend (o arquivo `docs/FRONTEND_TASKS.md` não está presente nesta fotografia do repositório).
 
 A revisão cruzou o HTML/JavaScript do protótipo, SPEC e DATABASE: UUIDs substituem códigos demonstrativos, documento do cedente permanece imutável e a proposta cambial persiste taxa absoluta. Os contratos novos estão identificados como ainda não implementados. A task não adicionou tipos executáveis, dependências, testes funcionais ou endpoints; essas entregas permanecem nas próximas tasks.
 
@@ -86,7 +90,7 @@ Verificações: tipagem, lint, build e 22 testes Vitest passaram; 12 testes Play
 
 Codex implementou cliente HTTP e schemas Zod por domínio, sessão demonstrativa em memória, guards/permissões e mocks MSW ativados explicitamente em desenvolvimento. O cliente recebe dependências de sessão/notificação; funções e componentes existentes foram reutilizados, sem nova dependência ou camadas de patterns artificiais. O modo real não recebe perfis fictícios; o build exclui worker e handlers.
 
-A demonstração inclui consultas, cadastro/edição de cedentes e simulação fixa. Fluxos financeiros completos serão ampliados nas tasks correspondentes; mocks não comprovam validação JWT, transações PostgreSQL, parsing CNAB ou cálculo financeiro real. Limites e comandos estão em [FRONTEND_HTTP.md](docs/FRONTEND_HTTP.md).
+A demonstração inclui consultas, cadastro/edição de cedentes e simulação fixa. Fluxos financeiros completos seriam ampliados nas tasks correspondentes; mocks não comprovam validação JWT, transações PostgreSQL, parsing CNAB ou cálculo financeiro real. Os limites e comandos foram registrados no guia histórico `docs/FRONTEND_HTTP.md`, que não está presente nesta fotografia do repositório.
 
 Tipagem, lint, build e 55 testes unitários aprovados. Playwright aprovou 16 testes de demonstração/navegação e quatro do build real, em desktop/celular. Cobertura inclui permissões, ausência de papel, autoaprovação, HTTP de erro, timeout/cancelamento, 204, upload, idempotency header, expiração com aviso, cache entre identidades, conflitos e inicialização dos mocks com falha/retentativa. Capturas do acesso demonstrativo foram inspecionadas. Foram corrigidas sincronizações dos testes com a conclusão do bootstrap e com a troca de breakpoint.
 
@@ -177,7 +181,7 @@ A revisão automática rejeitou leitura de senhas demonstrativas do ambiente do 
 
 Codex verificou as fontes do engine/worker e consultou o OpenAPI local, que retornou `paths: {}`. A integração real foi registrada como bloqueada pelas APIs de negócio ausentes, dependência externa do backlog. Solicitou referência de outra branch/ambiente, sem interpretar o pedido como autorização para acessar credenciais pendentes da task 13 ou implementar todo o backend.
 
-Entregou correções preparatórias com base em H.1/H.6: polling exclusivo de GET do lote, atualização da solicitação ativa com proteção contra resposta antiga e paginação de extrato 20/50/100. Mocks foram ajustados para permitir validar o mesmo fluxo. Nenhuma dependência nova, API fictícia de produção, alteração de schema ou backend em memória. Matriz por domínio e critérios de retomada em `docs/FRONTEND_INTEGRATION.md`.
+Entregou correções preparatórias com base em H.1/H.6: polling exclusivo de GET do lote, atualização da solicitação ativa com proteção contra resposta antiga e paginação de extrato 20/50/100. Mocks foram ajustados para permitir validar o mesmo fluxo. Nenhuma dependência nova, API fictícia de produção, alteração de schema ou backend em memória. A matriz por domínio e os critérios de retomada foram registrados no guia histórico `docs/FRONTEND_INTEGRATION.md`, ausente nesta fotografia do repositório.
 
 Verificação preparatória da task 14: tipagem, lint, build e 121 testes unitários aprovados. Oito cenários de navegador aprovados em desktop/celular, cobrindo consulta exclusiva do lote durante pendência, conclusão refletida no extrato/dashboard e seleção explícita de 100 itens. Captura do extrato inspecionada; largura de 320 px verificada. Permanecem os avisos não bloqueantes existentes do Zod e tamanho do bundle. `git diff --check` sem erros. Essas evidências usam mocks e não comprovam integração real.
 
@@ -186,7 +190,7 @@ Verificação preparatória da task 14: tipagem, lint, build e 121 testes unitá
 
 Codex configurou CI GitHub Actions com qualidade e matriz de três suítes de navegador, instalação pelo lockfile, Node 22, permissões de leitura e relatórios separados. Não publicou alterações nem disparou CI remota. Calendário dos testes demonstrativos passou a ser controlado pela data das fixtures, mantendo avanço normal do relógio e sem alterar o runtime de produção. Testes usam pt-BR e fuso diferente do calendário financeiro.
 
-A revisão visual identificou perda de foco após seleção do tamanho de página. Um teste reproduziu a falha em desktop/celular; o provedor de feedback passou a preservar o controle que abriu a lista temporária e restaurá-lo após o carregamento. Regressão reforçada para atualização, limpeza de filtros e paginação. Nenhuma dependência ou pattern adicional. Evidências e limites estão em `docs/FRONTEND_ACCEPTANCE.md`; homologação real não foi declarada concluída.
+A revisão visual identificou perda de foco após seleção do tamanho de página. Um teste reproduziu a falha em desktop/celular; o provedor de feedback passou a preservar o controle que abriu a lista temporária e restaurá-lo após o carregamento. Regressão reforçada para atualização, limpeza de filtros e paginação. Nenhuma dependência ou pattern adicional. Evidências e limites foram registrados no guia histórico `docs/FRONTEND_ACCEPTANCE.md`, ausente nesta fotografia do repositório; homologação real não foi declarada concluída.
 
 Verificação final da task 15: tipagem, lint, build e 121 testes unitários aprovados. Após a correção de foco, passaram 80 cenários Chromium: 58 demonstrativos, 12 de componentes e dez de produção/OIDC contratual, em desktop e celular. Fluxos incluem cinco ciclos de modais/combobox, teclado, retorno de foco, zoom 200%, movimento reduzido, larguras de 320 a 1920 px e consultas no fuso de São Paulo com navegador em Los Angeles. Capturas de extrato e modal inspecionadas. Workflow validado como YAML; CI remota não executada. `git diff --check` sem erros. Avisos conhecidos do Zod e tamanho do bundle permanecem; homologação integrada continua bloqueada pelas tasks 13/14.
 
@@ -199,3 +203,15 @@ DATABASE.md foi revisto com estado atual separado do histórico de tentativas, f
 Escopo somente documental: não houve implementação de APIs, migrations, alterações de código ou criação de tópicos Kafka. A verificação desta revisão é de consistência textual e contratos; não comprova comportamento financeiro em execução.
 
 Verificação documental: links locais, estrutura das tabelas Markdown, presença de `uuid`/`date_register` nas 12 tabelas e termos centrais dos contratos conferidos; `git diff --check` sem erros. Testes de execução não foram rodados, pois não houve alteração de código.
+
+## Estado do código observado — 27/09/2026
+
+Após os registros históricos acima, o repositório avançou além das estruturas provisórias. A UI contém fluxos de cadastro/importação, simulação, aceite, acompanhamento, resultados por título, auditoria, reprocessamento seletivo, câmbio, extrato e dashboard; usa contratos Zod, cliente HTTP autenticado e textos centralizados. Os arquivos de runtime chamam `/api`; fixtures e handlers MSW estão no harness de testes. A autenticação implementada usa Keycloak com PKCE.
+
+Há fontes de testes de navegador para integração real e concorrência (`ui-r-credit/e2e/engine-integration.spec.ts` e `ui-r-credit/e2e/settlement-race.spec.ts`), além de cenários isolados com mocks. A existência desses cenários não prova que foram executados ou aprovados nesta fotografia do repositório. Também não se deve interpretar a antiga anotação de integração bloqueada da Task 14 como estado atual. A leitura do código registrada aqui é uma fotografia prévia.
+
+### Estado da carga — matrix codex4/codex5
+
+`codex4` registrou 34 lotes medidos (34.000 títulos) nas concorrências 1, 2, 5 e na primeira onda de 10; a execução foi interrompida durante screenshots. Consulta somente leitura confirmou 35 lotes persistidos, incluindo o aquecimento, com 35.000 títulos, liquidações e mensagens da outbox `SENT`, sem falhas ou DLQ. `codex5` passou no Playwright com duas ondas de concorrência 10: 20 lotes/20.000 títulos, todos liquidados, sem erros HTTP; P95 aceite-terminal de 51,227 s e UI de 53,997 s. A soma observada foi 54 lotes medidos/54.000 títulos e um aquecimento/1.000 títulos; os diagnósticos individuais de `codex4` não foram preservados, portanto os percentis não foram combinados. A `codex1` usou imagem Nginx desatualizada e falhou antes do aceite. A `codex2` liquidou 1.000 títulos em cerca de 9,2 s, mas a harness procurou o terminal na página errada e não registrou métricas. A `codex3` validou a navegação corrigida com duas liquidações pequenas. O relatório de carga documenta o perfil e os limites: ambiente local diferente da referência da SPEC, duas rodadas apenas para `codex5`, e sem conclusão de SLA.
+
+Após a carga, revisão do consumer identificou risco de uma mensagem Kafka inválida bloquear repetidamente sua partição. O workflow passou a decodificar bytes em UTF-8 estrito e registrar mensagens malformadas ou sem correlação em quarentena append-only, por tópico/partição/offset, guardando hashes e tamanhos, sem payload bruto. O offset só é confirmado após o commit; falha de persistência mantém retry. A migration V6, verificação de compatibilidade e testes focados foram adicionados. Esta etapa executou somente a carga e verificações estáticas/documentais: os novos testes Java e builds não foram executados, e V6 ainda não foi aplicada ao banco compartilhado. A carga não exercitou o caminho de quarentena.

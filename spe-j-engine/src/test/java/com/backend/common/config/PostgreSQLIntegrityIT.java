@@ -20,6 +20,7 @@ class PostgreSQLIntegrityIT {
     static final PostgreSQLContainer POSTGRES = new PostgreSQLContainer("postgres:17.11-trixie");
     static DriverManagerDataSource admin;
     static DriverManagerDataSource runtime;
+    static DriverManagerDataSource workflow;
     static Flyway flyway;
 
     @BeforeAll
@@ -33,12 +34,45 @@ class PostgreSQLIntegrityIT {
             .cleanDisabled(true).load();
         flyway.migrate();
         runtime = new DriverManagerDataSource(POSTGRES.getJdbcUrl(), "srm_engine", "test");
+        workflow = new DriverManagerDataSource(POSTGRES.getJdbcUrl(), "srm_workflow", "test");
     }
 
     @Test
     void migrationsAreRepeatableWithoutReapplyingOrDeletingData() {
         assertEquals(0, flyway.migrate().migrationsExecuted);
-        assertEquals(5, flyway.info().applied().length);
+        assertEquals(6, flyway.info().applied().length);
+    }
+
+    @Test
+    void quarantinePrivilegesAllowWorkerInsertAndSelectAndEngineSelectOnly() throws Exception {
+        UUID id=UUID.randomUUID();long offset=UUID.randomUUID().getLeastSignificantBits()&Long.MAX_VALUE;
+        var jdbc=new JdbcTemplate(admin);
+        assertTrue(jdbc.queryForObject("SELECT has_table_privilege('srm_workflow','settlement_consumer_quarantine','SELECT')",Boolean.class));
+        assertTrue(jdbc.queryForObject("SELECT has_table_privilege('srm_workflow','settlement_consumer_quarantine','INSERT')",Boolean.class));
+        assertFalse(jdbc.queryForObject("SELECT has_table_privilege('srm_workflow','settlement_consumer_quarantine','UPDATE')",Boolean.class));
+        assertFalse(jdbc.queryForObject("SELECT has_table_privilege('srm_workflow','settlement_consumer_quarantine','DELETE')",Boolean.class));
+        assertTrue(jdbc.queryForObject("SELECT has_table_privilege('srm_engine','settlement_consumer_quarantine','SELECT')",Boolean.class));
+        assertFalse(jdbc.queryForObject("SELECT has_table_privilege('srm_engine','settlement_consumer_quarantine','INSERT')",Boolean.class));
+        String insert="INSERT INTO settlement_consumer_quarantine(uuid,source_topic,source_partition,source_offset,"
+                +"key_sha256,key_size_bytes,value_sha256,value_size_bytes,failure_code,date_register) VALUES('"+id
+                +"','credit-receivable',0,"+offset+",'"+"a".repeat(64)+"',4,'"+"b".repeat(64)+"',10,'COMANDO_MALFORMADO',now())";
+        try(Connection c=workflow.getConnection()) {
+            c.createStatement().executeUpdate(insert);
+            assertEquals(1,jdbc.queryForObject("SELECT count(*) FROM settlement_consumer_quarantine WHERE uuid=?",Integer.class,id));
+            String unknownCode=insert.replace(id.toString(),UUID.randomUUID().toString()).replace(
+                    "'credit-receivable',0,"+offset,"'credit-receivable',2,"+(offset+2)).replace("COMANDO_MALFORMADO","CODIGO_DESCONHECIDO");
+            assertThrows(SQLException.class,()->c.createStatement().executeUpdate(unknownCode));
+            assertThrows(SQLException.class,()->c.createStatement().executeUpdate(
+                    "UPDATE settlement_consumer_quarantine SET failure_code='OUTRO' WHERE uuid='"+id+"'"));
+            assertThrows(SQLException.class,()->c.createStatement().executeUpdate(
+                    "DELETE FROM settlement_consumer_quarantine WHERE uuid='"+id+"'"));
+        }
+        try(Connection c=runtime.getConnection()) {
+            assertEquals(1,jdbc.queryForObject("SELECT count(*) FROM settlement_consumer_quarantine WHERE uuid=?",Integer.class,id));
+            String engineInsert=insert.replace(id.toString(),UUID.randomUUID().toString()).replace(
+                    "'credit-receivable',0,"+offset,"'credit-receivable',1,"+(offset+1));
+            assertThrows(SQLException.class,()->c.createStatement().executeUpdate(engineInsert));
+        }
     }
 
     @Test

@@ -397,7 +397,7 @@ def test_persistent_volumes() -> None:
         "-c", "SELECT system_identifier FROM pg_control_system()",
     )
     topics_before = kafka_topics()
-    required_topics = {"credit-lot", "credit-lot.dlq"}
+    required_topics = {"credit-receivable", "credit-receivable.dlq"}
     require(required_topics <= topics_before,
             "tópicos esperados não existem no Kafka")
     topic_ids_before = kafka_topic_ids(required_topics)
