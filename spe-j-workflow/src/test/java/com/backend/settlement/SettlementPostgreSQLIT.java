@@ -5,7 +5,11 @@ import com.backend.common.pricing.PricingEngine;
 import com.backend.settlement.dto.SettlementCommand;
 import com.backend.settlement.repository.AttemptRepository;
 import com.backend.settlement.repository.ProcessingRepository;
+import com.backend.settlement.repository.SettlementQuarantineRepository;
+import com.backend.settlement.model.SettlementQuarantineEntry;
+import com.backend.settlement.model.AttemptContext;
 import com.backend.settlement.service.impl.SettlementMetrics;
+import com.backend.settlement.service.impl.SettlementQuarantineServiceImpl;
 import com.backend.settlement.service.impl.SettlementServiceImpl;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.nio.file.Files;
@@ -36,10 +40,13 @@ class SettlementPostgreSQLIT {
     @BeforeAll static void schema() throws Exception {
         var datasource=new DriverManagerDataSource(DB.getJdbcUrl(),DB.getUsername(),DB.getPassword());
         jdbc=new JdbcTemplate(datasource);manager=new JdbcTransactionManager(datasource);
+        jdbc.execute("CREATE ROLE srm_engine; CREATE ROLE srm_workflow");
         // Contract fixture uses the sole schema owner's migrations, never application source code.
         var migrations=Path.of(System.getProperty("basedir"),"..","spe-j-engine","src","main","resources","db","migration");
         jdbc.execute(Files.readString(migrations.resolve("V1__financial_schema.sql")));
         jdbc.execute(Files.readString(migrations.resolve("V2__transactional_integrity.sql")));
+        jdbc.execute(Files.readString(migrations.resolve("V6__settlement_consumer_quarantine.sql"))
+                .replace("${engineRole}","srm_engine").replace("${workflowRole}","srm_workflow"));
     }
     private SettlementServiceImpl service(PricingEngine pricing) {
         return service(pricing,new WorkerAuditRepository(jdbc,JsonMapper.builder().build()));
@@ -47,6 +54,27 @@ class SettlementPostgreSQLIT {
     private SettlementServiceImpl service(PricingEngine pricing,WorkerAuditRepository audit) {
         return new SettlementServiceImpl(new AttemptRepository(jdbc),new ProcessingRepository(jdbc),audit,pricing,
                 clock,new SettlementMetrics(new SimpleMeterRegistry()),manager);
+    }
+    private SettlementQuarantineServiceImpl quarantineService() {
+        return new SettlementQuarantineServiceImpl(new SettlementQuarantineRepository(jdbc),manager);
+    }
+
+    @Test void quarantineIsIdempotentByTopicPartitionOffsetAndRejectsChangedFingerprint() {
+        var service=quarantineService();
+        var first=new SettlementQuarantineEntry("credit-receivable",0,17,"a".repeat(64),12,
+                "b".repeat(64),10,"COMANDO_MALFORMADO");
+        service.quarantine(first);
+        service.quarantine(first);
+        service.quarantine(new SettlementQuarantineEntry("credit-receivable",1,17,"a".repeat(64),12,
+                "b".repeat(64),10,"COMANDO_MALFORMADO"));
+        service.quarantine(new SettlementQuarantineEntry("credit-receivable",0,18,"a".repeat(64),12,
+                "b".repeat(64),10,"COMANDO_MALFORMADO"));
+
+        assertEquals(3,jdbc.queryForObject("select count(*) from settlement_consumer_quarantine",Integer.class));
+        assertThrows(IllegalStateException.class,() -> service.quarantine(new SettlementQuarantineEntry(
+                "credit-receivable",0,17,"c".repeat(64),12,"b".repeat(64),10,"COMANDO_MALFORMADO")));
+        assertEquals("a".repeat(64),jdbc.queryForObject("select key_sha256 from settlement_consumer_quarantine where source_partition=0 and source_offset=17",String.class).trim());
+        assertEquals(3,jdbc.queryForObject("select count(*) from settlement_consumer_quarantine",Integer.class));
     }
     @Test void commitsIndividualResultsAndReplaysWithoutDuplicatingSuccess() {
         var commands=fixture(2,"1");var service=service(new PricingEngine());
@@ -111,6 +139,28 @@ class SettlementPostgreSQLIT {
         assertTrue(service(new PricingEngine()).process(command).acknowledged());
         assertEquals("REGRA_NAO_SUPORTADA",jdbc.queryForObject("select failure_code from settlement_request_item where receivable_uuid=?",String.class,command.receivableUuid()));
         assertEquals(0,jdbc.queryForObject("select retry_count from settlement_request_item where receivable_uuid=?",Integer.class,command.receivableUuid()));
+    }
+    @Test void missingAcceptedSnapshotIsPersistedAsTerminalFinancialFailure() {
+        var command=fixture(1,"1").getFirst();
+        var delegate=new AttemptRepository(jdbc);
+        var missingSnapshot=new AttemptRepository(jdbc) {
+            @Override public AttemptContext find(SettlementCommand requested) {
+                var context=delegate.find(requested);
+                return new AttemptContext(context.command(),context.attemptUuid(),context.activeAttemptUuid(),context.termsUuid(),
+                        context.status(),context.retryCount(),context.nextRetryAt(),context.attemptVersion(),
+                        context.processingVersion(),context.batchVersion(),context.requestVersion(),context.correlationId(),null);
+            }
+        };
+        var service=new SettlementServiceImpl(missingSnapshot,new ProcessingRepository(jdbc),
+                new WorkerAuditRepository(jdbc,JsonMapper.builder().build()),new PricingEngine(),clock,
+                new SettlementMetrics(new SimpleMeterRegistry()),manager);
+
+        assertTrue(service.process(command).acknowledged());
+        assertEquals("FAILED",jdbc.queryForObject("select status from settlement_request_item where receivable_uuid=?",String.class,command.receivableUuid()));
+        assertEquals("CONDICOES_FIXADAS_AUSENTES",jdbc.queryForObject("select failure_code from settlement_request_item where receivable_uuid=?",String.class,command.receivableUuid()));
+        assertEquals("PROCESSING",jdbc.queryForObject("select failure_stage from settlement_request_item where receivable_uuid=?",String.class,command.receivableUuid()));
+        assertEquals(1,jdbc.queryForObject("select count(*) from outbox_message where batch_uuid=? and topic='credit-receivable.dlq'",Integer.class,command.batchUuid()));
+        assertEquals(0,count("settlement",command.batchUuid()));
     }
     private int count(String table,UUID batch) { return jdbc.queryForObject("select count(*) from "+table+" where batch_uuid=?",Integer.class,batch); }
     private List<SettlementCommand> fixture(int size,String rule) {

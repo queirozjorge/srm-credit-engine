@@ -1,6 +1,6 @@
 # SPEC — SRM Credit Engine
 
-**Decisões iniciais aprovadas em 25/09/2026 · Revisão de liquidação em 27/09/2026 · Escopo Sênior. Backend financeiro ainda não implementado; frontend demonstrativo pendente de adequação à liquidação por título.**
+**Revisão de 27/09/2026 · Escopo Sênior. Esta SPEC é o contrato funcional vigente para a implementação atual; evidências executadas e limitações conhecidas estão em README.md, DECISIONS.md e docs/WORKFLOW_LOAD_REPORT.md.**
 
 Este documento concentra as decisões, contratos e critérios de aceite do [desafio](docs/desafio-tecnico-srm-credit-engine-v2.md). [README.md](README.md) apresenta o projeto; [AGENTS.md](AGENTS.md) define as convenções de implementação. A liquidação registra a aquisição antecipada do recebível pelo fundo; transferências bancárias reais e controle de saldo de caixa ficam fora desta entrega. O anexo reúne os detalhes técnicos complementares. A revisão de 27/09/2026 substitui a liquidação tudo ou nada por lote por liquidação independente por título. O desafio original e registros de entregas anteriores permanecem referências históricas; este contrato prevalece na implementação.
 
@@ -148,6 +148,8 @@ Persistir o orçamento de retries por par solicitação/título, reservando a re
 
 Conflitos de versão/unicidade exigem rollback e releitura: sucesso concorrente é resultado existente, não falha. Mensagem de tentativa antiga é reconhecida como obsoleta após conferir o histórico persistido e não pode executar nem marcar a nova tentativa como falha. Nunca simplesmente substituir sua chave pela atual. Se o banco não permitir conferir resultado ou persistir falha, não reconhecer o comando; recuperar o consumo e sinalizar indisponibilidade. Conflitos de agregação não devem consumir orçamento de falhas financeiras nem classificar outro título como falho.
 
+Mensagens que não podem ser correlacionadas a uma tentativa, incluindo payload fora do contrato, são registradas em `settlement_consumer_quarantine`, com unicidade por tópico/partição/offset. `failure_code` aceita somente `COMANDO_MALFORMADO` e `COMANDO_NAO_CORRELACIONADO`. A quarentena guarda somente SHA-256 e tamanhos em bytes da chave e do valor originais recebidos do Kafka, coordenadas, código e instante; nunca conteúdo bruto. O worker decodifica chave e payload como UTF-8 estrito; bytes inválidos são `COMANDO_MALFORMADO`. O worker pode inserir e consultar esses registros; o engine apenas consulta. Confirmar a mensagem somente depois do commit da quarentena. Se a persistência falhar, manter o offset e repetir após 5 segundos. Quarentena de mensagem não altera estado financeiro nem substitui a DLQ de falha definitiva por título. Exceção inesperada de processamento também mantém o offset sem ser convertida automaticamente em falha financeira.
+
 Auditoria é imutável e registra cadastro, aceite inicial, reprocessamento manual (operador autenticado, justificativa, seleção e vínculo às tentativas anteriores), condições fixadas por título, falhas de validação, repetições automáticas, falha definitiva e sucesso. Identificar lote, título, solicitação/tentativa, ordinal, instante, ator humano/técnico e correlação conforme o evento. Cada título tem exatamente um evento de sucesso por liquidação; cada tentativa terminal tem um único desfecho. Nova tentativa não apaga erros, condições ou responsáveis anteriores. Consulta paginada por título e lote permite reconstruir a sequência, sem edição ou exclusão de auditoria.
 
 ### E. Contratos HTTP e acompanhamento
@@ -169,11 +171,11 @@ As metas da seção 6 usam ambiente de referência Docker com 4 vCPU e 8 GiB dis
 
 Além da contagem de liquidações e latência, observar idade da outbox, falhas e mensagens na DLQ. Logs estruturados preservam causa/stack trace e correlação. Validar navegação por teclado, estado preservado e modais conforme AGENTS.md.
 
-Os entregáveis de revisão, registro de uso de IA e decisões ficam em [REVIEW.md](REVIEW.md), [AI_USAGE.md](AI_USAGE.md) e [DECISIONS.md](DECISIONS.md). Os comandos executáveis estão em [README.md](README.md); diagramas ER/C4 serão adicionados quando produzidos. Esta especificação descreve contratos esperados, não funcionalidades de negócio já realizadas.
+Os entregáveis de revisão, registro de uso de IA e decisões ficam em [REVIEW.md](REVIEW.md), [AI_USAGE.md](AI_USAGE.md) e [DECISIONS.md](DECISIONS.md). Os comandos executáveis estão em [README.md](README.md); os diagramas C4 e ER estão em [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). Esta SPEC define os contratos; a cobertura e os limites da implementação são descritos nos documentos de evidência, sem presumir que cada cenário operacional tenha sido executado.
 
 ### G. Gateway e ambiente Compose local
 
-Este contrato descreve o gateway do ambiente local. O Compose não torna as aplicações de negócio prontas para produção; autenticação no engine e operações financeiras continuam sujeitas aos contratos anteriores e ainda não estão implementadas.
+Este contrato descreve o gateway do ambiente local. O Compose não torna as aplicações prontas para produção: usa certificado e credenciais de demonstração e não oferece alta disponibilidade. O engine valida JWT e papéis; as operações financeiras estão implementadas conforme os contratos anteriores, com evidências e limitações registradas nos documentos do projeto.
 
 - **Origem e HTTPS:** acessar `https://localhost:8443`. `http://localhost:8088` responde `308` para HTTPS e preserva caminho e query string. O certificado autoassinado de desenvolvimento cobre `localhost` e `127.0.0.1`; o Compose não altera a confiança do sistema operacional.
 - **Prefixos:** `/api/` vai para `spe-j-engine:8080`, removendo apenas `/api` e enviando `X-Forwarded-Prefix: /api`. `/auth/` vai para `keycloak:8080`, mantendo o prefixo. O issuer público é `https://localhost:8443/auth/realms/srm-credit`. Swagger do engine fica em `/api/swagger-ui.html` e OpenAPI em `/api/v3/api-docs`.
@@ -186,11 +188,11 @@ Este contrato descreve o gateway do ambiente local. O Compose não torna as apli
 
 O Compose é para desenvolvimento local: usa certificado autoassinado, credenciais de demonstração, um broker Kafka com fator de replicação 1 e HTTP entre serviços dentro da rede Docker. Produção exige configuração própria de hostname, certificados, gestão de segredos, disponibilidade, backups, observabilidade e controles de rede.
 
-O README descreve comandos de execução e diagnóstico. [DECISIONS.md](DECISIONS.md) registra as escolhas do ambiente local, alternativas e custos. Esta especificação define contratos; não afirma que as funcionalidades de negócio estejam implementadas.
+O README descreve comandos de execução e diagnóstico. [DECISIONS.md](DECISIONS.md) registra as escolhas do ambiente local, alternativas e custos. Esta SPEC define contratos; cobertura e limites da implementação ficam nos documentos de evidência e não implicam que cada cenário operacional tenha sido executado.
 
-### H. Contratos propostos para o frontend e seus mocks
+### H. Contratos implementados para o frontend e as APIs
 
-**Task 01 · 26/09/2026 · Contratos revisados em 27/09/2026 para liquidação por título; adequação dos schemas/mocks/telas pendente, ainda sem endpoints de negócio implementados.** Este anexo é a fonte dos contratos para os futuros tipos TypeScript, schemas de validação, mocks HTTP e OpenAPI do engine. Não representa uma API disponível. As regras financeiras e de idempotência dos anexos anteriores permanecem válidas; alterações futuras devem atualizar mocks, consumidores e documentação em conjunto. O [mapa de telas e backlog](docs/FRONTEND_TASKS.md) acompanha a execução, sem substituir estes contratos.
+**Contratos implementados e revisados em 27/09/2026 para liquidação por título.** Este anexo define os contratos TypeScript, schemas de validação, APIs OpenAPI e fluxos do frontend. As fixtures HTTP ficam restritas ao harness de testes; o frontend de produção chama o engine. A existência de implementação não implica que todos os cenários integrados estejam cobertos por execução automatizada; consulte [DECISIONS.md](DECISIONS.md) e os relatórios de evidência.
 
 #### H.1. Convenções de transporte
 

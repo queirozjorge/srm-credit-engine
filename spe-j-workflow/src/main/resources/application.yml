@@ -19,8 +19,8 @@ spring:
       group-id: ${KAFKA_CONSUMER_GROUP:srm-credit-settlement}
       enable-auto-commit: false
       auto-offset-reset: earliest
-      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
-      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      key-deserializer: org.apache.kafka.common.serialization.ByteArrayDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.ByteArrayDeserializer
       max-poll-records: 1
     listener:
       ack-mode: manual_immediate
@@ -68,7 +68,7 @@ workflow:
     enabled: ${WORKFLOW_CONSUMER_ENABLED:true}
     concurrency: ${WORKFLOW_CONSUMER_CONCURRENCY:3}
   schema:
-    expected-version: "5"
+    expected-version: "6"
     check-enabled: true
 
 logging:
